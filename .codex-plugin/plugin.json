@@ -1,0 +1,15 @@
+{
+  "name": "codex-token-desk",
+  "version": "0.1.0",
+  "description": "Local real-time Codex rollout Token monitor.",
+  "license": "MIT",
+  "keywords": ["codex", "tokens", "context-window", "monitoring", "nextjs"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Token Desk",
+    "shortDescription": "Inspect Codex Token usage in a local real-time WebApp.",
+    "longDescription": "A local-only Next.js dashboard that scans Codex rollout JSONL, attributes cumulative Token usage to turns, and refreshes the current project every three seconds.",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read"]
+  }
+}
