@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check:secrets": "node scripts/check-client-secrets.mjs",
-    "tray:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-tray-app.ps1"
+    "tray:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-tray-app.ps1",
+    "tray:test": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/run-tray-integration.ps1"
   },
   "dependencies": {
     "next": "16.2.10",

@@ -65,7 +65,15 @@ pnpm build
 pnpm tray:build
 ```
 
-Windows 托盘程序使用 .NET Framework WinForms 管理 Next.js 生产服务，并通过 PowerShell 启动器发现 Node/pnpm 运行时。托盘程序需要和项目目录中的 `.next`、`scripts/start-dashboard.ps1` 一起保留，默认服务地址是 `http://127.0.0.1:3002`。
+Windows 托盘程序使用 .NET Framework WinForms 管理 Next.js 生产服务，并通过 PowerShell 启动器发现 Node/pnpm 运行时。托盘使用 Windows Job Object 持有完整服务进程树；正常退出、崩溃或被强制结束时，PowerShell/pnpm/Node 会一并停止。托盘程序需要和项目目录中的 `.next`、`scripts/start-dashboard.ps1` 一起保留，默认服务地址是 `http://127.0.0.1:3002`。
+
+端口 3002 已被占用时，托盘会联合核验健康接口的 `instanceId`、`%LOCALAPPDATA%\CodexTokenDesk\server.json`、PID/启动时间和实际进程链。只有确认属于当前项目的残留实例才会被清理；未知程序不会被终止。生命周期日志保存在 `%LOCALAPPDATA%\CodexTokenDesk\logs\lifecycle.log`。
+
+托盘生命周期集成测试会实际启动和终止本机测试实例，运行前需确保 3002 没有需要保留的服务：
+
+```powershell
+pnpm tray:test
+```
 
 ## 隐私
 

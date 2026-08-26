@@ -2,11 +2,8 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.IO;
-using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -23,78 +20,60 @@ namespace CodexTokenDesk
     internal static class Program
     {
         private const string MutexName = @"Local\CodexTokenDesk.Tray";
-        private const string ExitEventName = @"Local\CodexTokenDesk.Tray.Exit";
 
         [STAThread]
         private static void Main(string[] args)
         {
-            if (args.Length > 0 && HandleCommand(args[0])) return;
+            ConfigureExceptionLogging();
+            string command = args.Length > 0 ? args[0].ToLowerInvariant() : null;
+            if (command == "--open")
+            {
+                ServerController.OpenDashboard();
+                return;
+            }
+            bool lifecycleCommand = command == "--start" || command == "--stop" || command == "--restart" || command == "--exit";
+            if (lifecycleCommand && TrayCommandSignals.TrySignal(command)) return;
+            if (lifecycleCommand && command != "--start") return;
 
             bool createdNew;
             using (Mutex mutex = new Mutex(true, MutexName, out createdNew))
             {
                 if (!createdNew)
                 {
-                    ServerController.OpenDashboard();
+                    if (!string.IsNullOrEmpty(command)) TrayCommandSignals.TrySignal(command);
+                    else ServerController.OpenDashboard();
                     return;
                 }
 
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                bool eventCreated;
-                using (EventWaitHandle exitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ExitEventName, out eventCreated))
+                using (TrayCommandSignals commandSignals = TrayCommandSignals.CreateOwner())
                 {
-                    Application.Run(new TrayApplicationContext(exitEvent));
+                    LifecycleLog.Write("tray.started", "pid=" + Process.GetCurrentProcess().Id);
+                    Application.Run(new TrayApplicationContext(commandSignals));
+                    LifecycleLog.Write("tray.exited", "pid=" + Process.GetCurrentProcess().Id);
                 }
             }
         }
 
-        private static bool HandleCommand(string command)
+        private static void ConfigureExceptionLogging()
         {
-            string value = command.ToLowerInvariant();
-            if (value == "--open")
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e)
             {
-                ServerController.OpenDashboard();
-                return true;
-            }
-
-            if (value == "--exit")
+                LifecycleLog.Write("tray.unhandled-ui", e.Exception.ToString());
+                Environment.FailFast("Codex Token Desk UI thread failed.", e.Exception);
+            };
+            AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e)
             {
-                try
-                {
-                    using (EventWaitHandle exitEvent = EventWaitHandle.OpenExisting(ExitEventName))
-                    {
-                        exitEvent.Set();
-                        return true;
-                    }
-                }
-                catch (WaitHandleCannotBeOpenedException)
-                {
-                    using (ServerController controller = new ServerController()) controller.StopAndWait();
-                    return true;
-                }
-            }
-
-            if (value != "--start" && value != "--stop" && value != "--restart") return false;
-            try
+                Exception exception = e.ExceptionObject as Exception;
+                LifecycleLog.Write("tray.unhandled-domain", exception == null ? Convert.ToString(e.ExceptionObject) : exception.ToString());
+            };
+            TaskScheduler.UnobservedTaskException += delegate(object sender, UnobservedTaskExceptionEventArgs e)
             {
-                using (ServerController controller = new ServerController())
-                {
-                    if (value == "--stop") controller.StopAndWait();
-                    else if (value == "--start") controller.StartAndWait();
-                    else
-                    {
-                        controller.StopAndWait();
-                        controller.StartAndWait();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Environment.ExitCode = 1;
-                MessageBox.Show(ex.Message, "Codex Token Desk", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-            return true;
+                LifecycleLog.Write("tray.unobserved-task", e.Exception.ToString());
+                e.SetObserved();
+            };
         }
     }
 
@@ -110,7 +89,7 @@ namespace CodexTokenDesk
     internal sealed class TrayApplicationContext : ApplicationContext
     {
         private readonly ServerController controller;
-        private readonly EventWaitHandle exitEvent;
+        private readonly TrayCommandSignals commandSignals;
         private readonly NotifyIcon notifyIcon;
         private readonly ToolStripMenuItem statusItem;
         private readonly ToolStripMenuItem startItem;
@@ -123,10 +102,11 @@ namespace CodexTokenDesk
         private bool operationInProgress;
         private bool firstIdleHandled;
         private bool exiting;
+        private DateTime nextStateRefreshUtc;
 
-        public TrayApplicationContext(EventWaitHandle exitEventHandle)
+        public TrayApplicationContext(TrayCommandSignals signals)
         {
-            exitEvent = exitEventHandle;
+            commandSignals = signals;
             controller = new ServerController();
             state = controller.IsDashboardRunning() ? ServiceState.Running : ServiceState.Stopped;
 
@@ -158,6 +138,7 @@ namespace CodexTokenDesk
                 }
                 catch (Exception ex)
                 {
+                    LifecycleLog.Write("startup-registration.failed", ex.GetType().Name + ": " + ex.Message);
                     startupItem.Checked = !startupItem.Checked;
                     ShowError("无法修改开机启动设置", ex.Message);
                 }
@@ -184,11 +165,15 @@ namespace CodexTokenDesk
             notifyIcon.Visible = true;
 
             timer = new System.Windows.Forms.Timer();
-            timer.Interval = 5000;
+            timer.Interval = 250;
+            nextStateRefreshUtc = DateTime.UtcNow.AddSeconds(5);
             timer.Tick += async delegate
             {
-                if (exitEvent.WaitOne(0)) await ExitAsync();
-                else RefreshObservedState();
+                if (!operationInProgress && commandSignals.TakeExit()) await ExitAsync();
+                else if (!operationInProgress && commandSignals.TakeRestart()) await RestartServiceAsync();
+                else if (!operationInProgress && commandSignals.TakeStop()) await StopServiceAsync(false);
+                else if (!operationInProgress && commandSignals.TakeStart()) await StartServiceAsync(false);
+                else RefreshObservedStateIfDue();
             };
             timer.Start();
 
@@ -224,6 +209,7 @@ namespace CodexTokenDesk
             }
             catch (Exception ex)
             {
+                LifecycleLog.Write("service.start.failed", ex.GetType().Name + ": " + ex.Message);
                 ApplyState(ServiceState.Faulted);
                 ShowError("服务启动失败", ex.Message);
             }
@@ -246,6 +232,7 @@ namespace CodexTokenDesk
             }
             catch (Exception ex)
             {
+                LifecycleLog.Write("service.stop.failed", ex.GetType().Name + ": " + ex.Message);
                 ApplyState(ServiceState.Faulted);
                 ShowError("服务停止失败", ex.Message);
             }
@@ -270,6 +257,7 @@ namespace CodexTokenDesk
             }
             catch (Exception ex)
             {
+                LifecycleLog.Write("service.restart.failed", ex.GetType().Name + ": " + ex.Message);
                 ApplyState(ServiceState.Faulted);
                 ShowError("服务重启失败", ex.Message);
             }
@@ -289,8 +277,9 @@ namespace CodexTokenDesk
             {
                 await Task.Run(delegate { controller.StopAndWait(); });
             }
-            catch
+            catch (Exception ex)
             {
+                LifecycleLog.Write("service.exit-cleanup.failed", ex.GetType().Name + ": " + ex.Message);
                 // Exit should not be blocked by a failed cleanup attempt.
             }
             notifyIcon.Visible = false;
@@ -300,7 +289,28 @@ namespace CodexTokenDesk
         private void RefreshObservedState()
         {
             if (operationInProgress || exiting) return;
+            if (controller.HasUnexpectedExit())
+            {
+                try
+                {
+                    controller.CleanupUnexpectedExit();
+                }
+                catch (Exception ex)
+                {
+                    LifecycleLog.Write("service.cleanup.failed", ex.GetType().Name + ": " + ex.Message);
+                }
+                ApplyState(ServiceState.Faulted);
+                return;
+            }
+            if (state == ServiceState.Faulted) return;
             ApplyState(controller.IsDashboardRunning() ? ServiceState.Running : ServiceState.Stopped);
+        }
+
+        private void RefreshObservedStateIfDue()
+        {
+            if (DateTime.UtcNow < nextStateRefreshUtc) return;
+            nextStateRefreshUtc = DateTime.UtcNow.AddSeconds(5);
+            RefreshObservedState();
         }
 
         private void ApplyState(ServiceState nextState)
@@ -370,191 +380,6 @@ namespace CodexTokenDesk
                 controller.Dispose();
             }
             base.Dispose(disposing);
-        }
-    }
-
-    internal sealed class ServerController : IDisposable
-    {
-        internal const string DashboardAddress = "127.0.0.1:3002";
-        private const int DashboardPort = 3002;
-        private const string DashboardUrl = "http://" + DashboardAddress + "/";
-        private readonly string repositoryRoot;
-        private Process launcher;
-
-        public ServerController()
-        {
-            repositoryRoot = FindRepositoryRoot();
-        }
-
-        public bool IsDashboardRunning()
-        {
-            try
-            {
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(DashboardUrl);
-                request.Method = "GET";
-                request.Timeout = 1300;
-                request.ReadWriteTimeout = 1300;
-                request.Proxy = null;
-                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
-                {
-                    string html = reader.ReadToEnd();
-                    return response.StatusCode == HttpStatusCode.OK && html.IndexOf("Codex Token Desk", StringComparison.OrdinalIgnoreCase) >= 0;
-                }
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public void StartAndWait()
-        {
-            if (IsDashboardRunning()) return;
-            if (repositoryRoot == null) throw new InvalidOperationException("找不到 CodexTokenDesk 项目目录。请把 EXE 保留在项目的 dist\\CodexTokenDesk 目录中。");
-
-            string buildMarker = Path.Combine(repositoryRoot, ".next", "BUILD_ID");
-            if (!File.Exists(buildMarker)) throw new InvalidOperationException("缺少生产构建。请先在项目目录执行 pnpm build。");
-
-            string script = Path.Combine(repositoryRoot, "scripts", "start-dashboard.ps1");
-            ProcessStartInfo startInfo = new ProcessStartInfo();
-            startInfo.FileName = "powershell.exe";
-            startInfo.Arguments = "-NoProfile -ExecutionPolicy Bypass -File " + Quote(script) + " -Production";
-            startInfo.WorkingDirectory = repositoryRoot;
-            startInfo.UseShellExecute = false;
-            startInfo.CreateNoWindow = true;
-            startInfo.WindowStyle = ProcessWindowStyle.Hidden;
-            launcher = Process.Start(startInfo);
-
-            for (int attempt = 0; attempt < 50; attempt++)
-            {
-                Thread.Sleep(400);
-                if (IsDashboardRunning()) return;
-                if (launcher != null && launcher.HasExited) throw new InvalidOperationException("启动进程提前退出。请检查 Node/pnpm 运行时是否可用。");
-            }
-            throw new TimeoutException("Dashboard 在 20 秒内未能启动。");
-        }
-
-        public void StopAndWait()
-        {
-            if (!IsDashboardRunning())
-            {
-                StopLauncher();
-                return;
-            }
-
-            int pid = FindListeningPid(DashboardPort);
-            if (pid > 0)
-            {
-                try
-                {
-                    Process process = Process.GetProcessById(pid);
-                    process.Kill();
-                    process.WaitForExit(5000);
-                }
-                catch (ArgumentException)
-                {
-                    // Process already exited.
-                }
-            }
-
-            StopLauncher();
-            for (int attempt = 0; attempt < 20; attempt++)
-            {
-                if (!IsDashboardRunning()) return;
-                Thread.Sleep(250);
-            }
-            throw new InvalidOperationException("端口 " + DashboardPort + " 仍在监听，服务未完全停止。");
-        }
-
-        private void StopLauncher()
-        {
-            if (launcher == null) return;
-            try
-            {
-                if (!launcher.HasExited) launcher.Kill();
-            }
-            catch
-            {
-                // Child server process is the authoritative lifecycle signal.
-            }
-            finally
-            {
-                launcher.Dispose();
-                launcher = null;
-            }
-        }
-
-        private static int FindListeningPid(int port)
-        {
-            try
-            {
-                ProcessStartInfo info = new ProcessStartInfo();
-                info.FileName = "netstat.exe";
-                info.Arguments = "-ano -p tcp";
-                info.UseShellExecute = false;
-                info.CreateNoWindow = true;
-                info.RedirectStandardOutput = true;
-                using (Process process = Process.Start(info))
-                {
-                    string output = process.StandardOutput.ReadToEnd();
-                    process.WaitForExit(4000);
-                    string suffix = ":" + port;
-                    string[] lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                    foreach (string line in lines)
-                    {
-                        string[] parts = line.Trim().Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length >= 5 && parts[1].EndsWith(suffix, StringComparison.Ordinal) && string.Equals(parts[3], "LISTENING", StringComparison.OrdinalIgnoreCase))
-                        {
-                            int pid;
-                            if (int.TryParse(parts[4], out pid)) return pid;
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                return -1;
-            }
-            return -1;
-        }
-
-        private static string FindRepositoryRoot()
-        {
-            string[] starts = { AppDomain.CurrentDomain.BaseDirectory, Environment.CurrentDirectory };
-            foreach (string start in starts)
-            {
-                DirectoryInfo directory = new DirectoryInfo(start);
-                for (int level = 0; level < 8 && directory != null; level++, directory = directory.Parent)
-                {
-                    if (File.Exists(Path.Combine(directory.FullName, "package.json")) && File.Exists(Path.Combine(directory.FullName, "scripts", "start-dashboard.ps1"))) return directory.FullName;
-                }
-            }
-            return null;
-        }
-
-        private static string Quote(string value)
-        {
-            return "\"" + value.Replace("\"", "\\\"") + "\"";
-        }
-
-        public static void OpenDashboard()
-        {
-            try
-            {
-                ProcessStartInfo info = new ProcessStartInfo(DashboardUrl);
-                info.UseShellExecute = true;
-                Process.Start(info);
-            }
-            catch
-            {
-                // Opening a browser is a convenience and must not crash the tray app.
-            }
-        }
-
-        public void Dispose()
-        {
-            if (launcher != null) launcher.Dispose();
         }
     }
 
