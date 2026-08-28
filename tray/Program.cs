@@ -1,7 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
-using System.Drawing.Drawing2D;
+using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -317,28 +317,22 @@ namespace CodexTokenDesk
         {
             state = nextState;
             string label;
-            Color color;
             switch (state)
             {
                 case ServiceState.Running:
                     label = "状态：运行中 · " + ServerController.DashboardAddress;
-                    color = Color.FromArgb(98, 207, 144);
                     break;
                 case ServiceState.Starting:
                     label = "状态：正在启动…";
-                    color = Color.FromArgb(90, 181, 231);
                     break;
                 case ServiceState.Stopping:
                     label = "状态：正在停止…";
-                    color = Color.FromArgb(230, 182, 78);
                     break;
                 case ServiceState.Faulted:
                     label = "状态：启动异常";
-                    color = Color.FromArgb(238, 103, 94);
                     break;
                 default:
                     label = "状态：已停止";
-                    color = Color.FromArgb(105, 115, 114);
                     break;
             }
 
@@ -348,7 +342,7 @@ namespace CodexTokenDesk
             restartItem.Enabled = !operationInProgress && state == ServiceState.Running;
             notifyIcon.Text = state == ServiceState.Running ? "Codex Token Desk - 运行中" : "Codex Token Desk - 已停止";
 
-            Icon nextIcon = TrayIconFactory.Create(color);
+            Icon nextIcon = TrayIconFactory.Create(state);
             notifyIcon.Icon = nextIcon;
             if (currentIcon != null) currentIcon.Dispose();
             currentIcon = nextIcon;
@@ -416,36 +410,32 @@ namespace CodexTokenDesk
 
     internal static class TrayIconFactory
     {
+        private const string ResourcePrefix = "CodexTokenDesk.Tray.";
+
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         private static extern bool DestroyIcon(IntPtr handle);
 
-        public static Icon Create(Color statusColor)
+        public static Icon Create(ServiceState state)
         {
-            using (Bitmap bitmap = new Bitmap(32, 32))
-            using (Graphics graphics = Graphics.FromImage(bitmap))
-            using (Pen rim = new Pen(Color.FromArgb(228, 168, 75), 2f))
-            using (Brush face = new SolidBrush(Color.FromArgb(23, 28, 29)))
-            using (Brush light = new SolidBrush(statusColor))
-            using (Font font = new Font("Segoe UI", 7f, FontStyle.Bold, GraphicsUnit.Pixel))
-            using (Brush text = new SolidBrush(Color.FromArgb(232, 236, 234)))
+            string resourceName = ResourcePrefix + state.ToString().ToLowerInvariant() + ".png";
+            Assembly assembly = typeof(TrayIconFactory).Assembly;
+            using (Stream stream = assembly.GetManifestResourceStream(resourceName))
             {
-                graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                graphics.Clear(Color.Transparent);
-                graphics.FillEllipse(face, 2, 2, 28, 28);
-                graphics.DrawEllipse(rim, 3, 3, 26, 26);
-                graphics.DrawString("CT", font, text, 8f, 9f);
-                graphics.FillEllipse(light, 22, 21, 6, 6);
-                IntPtr handle = bitmap.GetHicon();
-                try
+                if (stream == null) throw new InvalidOperationException("Missing embedded tray icon: " + resourceName);
+                using (Bitmap bitmap = new Bitmap(stream))
                 {
-                    using (Icon icon = Icon.FromHandle(handle))
+                    IntPtr handle = bitmap.GetHicon();
+                    try
                     {
-                        return (Icon)icon.Clone();
+                        using (Icon icon = Icon.FromHandle(handle))
+                        {
+                            return (Icon)icon.Clone();
+                        }
                     }
-                }
-                finally
-                {
-                    DestroyIcon(handle);
+                    finally
+                    {
+                        DestroyIcon(handle);
+                    }
                 }
             }
         }
