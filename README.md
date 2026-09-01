@@ -65,7 +65,23 @@ pnpm build
 pnpm tray:build
 ```
 
-Windows 托盘程序使用 .NET Framework WinForms 管理 Next.js 生产服务，并通过 PowerShell 启动器发现 Node/pnpm 运行时。托盘使用 Windows Job Object 持有完整服务进程树；正常退出、崩溃或被强制结束时，PowerShell/pnpm/Node 会一并停止。托盘程序需要和项目目录中的 `.next`、`scripts/start-dashboard.ps1` 一起保留，默认服务地址是 `http://127.0.0.1:3002`。
+Windows 托盘程序使用 .NET Framework WinForms 管理 Next.js 生产服务，并通过 Windows Job Object 持有完整服务进程树。
+
+要生成无需安装 Node.js/pnpm、也无需保留源码的 Windows x64 standalone 包：
+
+```powershell
+pnpm standalone:package
+```
+
+脚本会启用 Next.js standalone 输出，下载并校验固定版本的官方便携版 Node.js，只把 `node.exe`、standalone 服务文件和静态资源放进发布目录，然后生成 `dist/CodexTokenDesk-standalone-win-x64.zip`。解压后可从任意目录双击 `CodexTokenDesk.exe`；运行时仍从当前用户的 `%USERPROFILE%\\.codex\\sessions` 和 `archived_sessions` 读取 rollout 数据，默认服务地址是 `http://127.0.0.1:3002`。
+
+standalone 包不包含项目源码、`node_modules`、pnpm 或开发依赖。托盘直接启动包内的 `runtime/node/node.exe` 和 `.next/standalone/server.js`；正常退出、崩溃或被强制结束时，Node 服务进程会一并停止。
+
+生成包后可用以下命令在全新临时目录中验证其独立性：
+
+```powershell
+pnpm standalone:test
+```
 
 端口 3002 已被占用时，托盘会联合核验健康接口的 `instanceId`、`%LOCALAPPDATA%\CodexTokenDesk\server.json`、PID/启动时间和实际进程链。只有确认属于当前项目的残留实例才会被清理；未知程序不会被终止。生命周期日志保存在 `%LOCALAPPDATA%\CodexTokenDesk\logs\lifecycle.log`。
 

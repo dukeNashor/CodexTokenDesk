@@ -62,7 +62,7 @@ namespace CodexTokenDesk
         public void StartAndWait()
         {
             if (IsDashboardRunning()) return;
-            if (repositoryRoot == null) throw new InvalidOperationException("找不到 CodexTokenDesk 项目目录。请把 EXE 保留在项目的 dist\\CodexTokenDesk 目录中。");
+            if (repositoryRoot == null) throw new InvalidOperationException("找不到 Codex Token Desk 运行时目录。请从完整的 standalone 发布目录启动 EXE。");
 
             int existingListenerPid = processInspector.FindListeningProcessId(DashboardPort);
             if (existingListenerPid > 0)
@@ -75,18 +75,33 @@ namespace CodexTokenDesk
                 StopVerifiedOwnedInstance(existingRecord);
             }
 
-            string buildMarker = Path.Combine(repositoryRoot, ".next", "BUILD_ID");
-            if (!File.Exists(buildMarker)) throw new InvalidOperationException("缺少生产构建。请先在项目目录执行 pnpm build。");
+            string standaloneServer = Path.Combine(repositoryRoot, ".next", "standalone", "server.js");
+            string bundledNode = Path.Combine(repositoryRoot, "runtime", "node", "node.exe");
+            string executable;
+            string arguments;
+            if (File.Exists(standaloneServer) && File.Exists(bundledNode))
+            {
+                executable = bundledNode;
+                arguments = Quote(standaloneServer);
+            }
+            else
+            {
+                string buildMarker = Path.Combine(repositoryRoot, ".next", "BUILD_ID");
+                if (!File.Exists(buildMarker)) throw new InvalidOperationException("缺少 standalone 生产构建。请重新生成完整发布包。");
 
-            string script = Path.Combine(repositoryRoot, "scripts", "start-dashboard.ps1");
-            string powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
-            string arguments = "-NoProfile -ExecutionPolicy Bypass -File " + Quote(script) + " -Production";
+                string script = Path.Combine(repositoryRoot, "scripts", "start-dashboard.ps1");
+                string powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+                executable = powershell;
+                arguments = "-NoProfile -ExecutionPolicy Bypass -File " + Quote(script) + " -Production";
+            }
             instanceId = Guid.NewGuid().ToString("N");
             Dictionary<string, string> environment = new Dictionary<string, string>();
             environment["CODEX_TOKEN_DESK_INSTANCE_ID"] = instanceId;
+            environment["HOSTNAME"] = "127.0.0.1";
+            environment["PORT"] = DashboardPort.ToString();
             try
             {
-                launcher = JobProcess.Start(powershell, arguments, repositoryRoot, environment);
+                launcher = JobProcess.Start(executable, arguments, repositoryRoot, environment);
                 WriteInstanceRecord(0, 0);
 
                 for (int attempt = 0; attempt < 50; attempt++)
@@ -109,7 +124,7 @@ namespace CodexTokenDesk
                         LifecycleLog.Write("service.started", "instanceId=" + instanceId + " listenerPid=" + listenerPid);
                         return;
                     }
-                    if (launcher != null && launcher.HasExited) throw new InvalidOperationException("启动进程提前退出。请检查 Node/pnpm 运行时是否可用。");
+                    if (launcher != null && launcher.HasExited) throw new InvalidOperationException("启动进程提前退出。请检查 standalone 运行时是否完整。");
                 }
                 throw new TimeoutException("Dashboard 在 20 秒内未能启动。");
             }
@@ -293,6 +308,8 @@ namespace CodexTokenDesk
                 DirectoryInfo directory = new DirectoryInfo(start);
                 for (int level = 0; level < 8 && directory != null; level++, directory = directory.Parent)
                 {
+                    if (File.Exists(Path.Combine(directory.FullName, ".next", "standalone", "server.js")) &&
+                        File.Exists(Path.Combine(directory.FullName, "runtime", "node", "node.exe"))) return directory.FullName;
                     if (File.Exists(Path.Combine(directory.FullName, "package.json")) && File.Exists(Path.Combine(directory.FullName, "scripts", "start-dashboard.ps1"))) return directory.FullName;
                 }
             }

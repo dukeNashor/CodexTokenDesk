@@ -1,6 +1,6 @@
 {
   "name": "codex-token-desk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --hostname 127.0.0.1 --port 3002",
@@ -10,6 +10,8 @@
     "test": "vitest run",
     "check:secrets": "node scripts/check-client-secrets.mjs",
     "tray:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-tray-app.ps1",
+    "standalone:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-standalone-package.ps1",
+    "standalone:test": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/standalone-runtime.Tests.ps1",
     "tray:test": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/run-tray-integration.ps1"
   },
   "dependencies": {

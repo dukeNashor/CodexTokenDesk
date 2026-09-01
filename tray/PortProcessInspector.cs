@@ -64,6 +64,12 @@ namespace CodexTokenDesk
             if (listener == null || !string.Equals(listener.Name, "node.exe", StringComparison.OrdinalIgnoreCase)) return false;
             if (!ContainsPath(listener.CommandLine, repositoryRoot) || listener.CommandLine.IndexOf("next", StringComparison.OrdinalIgnoreCase) < 0) return false;
 
+            if (listener.ProcessId == launcherProcessId)
+            {
+                return listener.CommandLine.IndexOf("standalone", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    listener.CommandLine.IndexOf("server.js", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
             int currentProcessId = listener.ParentProcessId;
             for (int depth = 0; depth < 16 && currentProcessId > 0; depth++)
             {
