@@ -1,5 +1,6 @@
 param(
-    [string]$OutputDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) "assets\tray")
+    [string]$OutputDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) "assets\tray"),
+    [string]$IconOutputPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,7 +22,8 @@ $states = [ordered]@{
 function New-ContextHaloBitmap {
     param(
         [System.Drawing.Color]$StatusColor,
-        [int]$Scale = 1
+        [int]$Scale = 1,
+        [bool]$IncludeStatusTile = $true
     )
 
     $bitmap = [System.Drawing.Bitmap]::new(
@@ -56,7 +58,7 @@ function New-ContextHaloBitmap {
                 }
 
                 # A three-pixel status tile replaces the lower-right ring segment.
-                if ($x -ge 12 -and $x -le 14 -and $y -ge 12 -and $y -le 14) {
+                if ($IncludeStatusTile -and $x -ge 12 -and $x -le 14 -and $y -ge 12 -and $y -le 14) {
                     $color = if ($x -eq 13 -and $y -eq 13) { $StatusColor } else { $dark }
                 }
 
@@ -135,6 +137,58 @@ try {
 finally {
     $previewGraphics.Dispose()
     $preview.Dispose()
+}
+
+if ($IconOutputPath) {
+    $iconSizes = @(16, 32, 48, 256)
+    $pngImages = @()
+
+    foreach ($size in $iconSizes) {
+        $bitmap = New-ContextHaloBitmap -StatusColor $emerald -Scale $size -IncludeStatusTile $false
+        try {
+            $stream = [System.IO.MemoryStream]::new()
+            try {
+                $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
+                $pngImages += ,$stream.ToArray()
+            }
+            finally {
+                $stream.Dispose()
+            }
+        }
+        finally {
+            $bitmap.Dispose()
+        }
+    }
+
+    $iconStream = [System.IO.File]::Open($IconOutputPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+    $writer = [System.IO.BinaryWriter]::new($iconStream)
+    try {
+        $writer.Write([uint16]0)
+        $writer.Write([uint16]1)
+        $writer.Write([uint16]$iconSizes.Count)
+
+        $offset = 6 + (16 * $iconSizes.Count)
+        for ($index = 0; $index -lt $iconSizes.Count; $index++) {
+            $size = $iconSizes[$index]
+            $writer.Write([byte]$(if ($size -eq 256) { 0 } else { $size }))
+            $writer.Write([byte]$(if ($size -eq 256) { 0 } else { $size }))
+            $writer.Write([byte]0)
+            $writer.Write([byte]0)
+            $writer.Write([uint16]1)
+            $writer.Write([uint16]32)
+            $writer.Write([uint32]$pngImages[$index].Length)
+            $writer.Write([uint32]$offset)
+            $offset += $pngImages[$index].Length
+        }
+
+        foreach ($pngImage in $pngImages) {
+            $writer.Write($pngImage)
+        }
+    }
+    finally {
+        $writer.Dispose()
+        $iconStream.Dispose()
+    }
 }
 
 Write-Host "Generated tray icons in $OutputDirectory"

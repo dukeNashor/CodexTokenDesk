@@ -1,9 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
-using System.IO;
 using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -162,6 +160,8 @@ namespace CodexTokenDesk
             notifyIcon.ContextMenuStrip = menu;
             notifyIcon.Text = "Codex Token Desk";
             notifyIcon.DoubleClick += delegate { ServerController.OpenDashboard(); };
+            currentIcon = TrayIconFactory.Create();
+            notifyIcon.Icon = currentIcon;
             notifyIcon.Visible = true;
 
             timer = new System.Windows.Forms.Timer();
@@ -341,11 +341,6 @@ namespace CodexTokenDesk
             stopItem.Enabled = !operationInProgress && state == ServiceState.Running;
             restartItem.Enabled = !operationInProgress && state == ServiceState.Running;
             notifyIcon.Text = state == ServiceState.Running ? "Codex Token Desk - 运行中" : "Codex Token Desk - 已停止";
-
-            Icon nextIcon = TrayIconFactory.Create(state);
-            notifyIcon.Icon = nextIcon;
-            if (currentIcon != null) currentIcon.Dispose();
-            currentIcon = nextIcon;
         }
 
         private void ShowInfo(string title, string message)
@@ -410,33 +405,12 @@ namespace CodexTokenDesk
 
     internal static class TrayIconFactory
     {
-        private const string ResourcePrefix = "CodexTokenDesk.Tray.";
-
-        [DllImport("user32.dll", CharSet = CharSet.Auto)]
-        private static extern bool DestroyIcon(IntPtr handle);
-
-        public static Icon Create(ServiceState state)
+        public static Icon Create()
         {
-            string resourceName = ResourcePrefix + state.ToString().ToLowerInvariant() + ".png";
-            Assembly assembly = typeof(TrayIconFactory).Assembly;
-            using (Stream stream = assembly.GetManifestResourceStream(resourceName))
+            using (Icon icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath))
             {
-                if (stream == null) throw new InvalidOperationException("Missing embedded tray icon: " + resourceName);
-                using (Bitmap bitmap = new Bitmap(stream))
-                {
-                    IntPtr handle = bitmap.GetHicon();
-                    try
-                    {
-                        using (Icon icon = Icon.FromHandle(handle))
-                        {
-                            return (Icon)icon.Clone();
-                        }
-                    }
-                    finally
-                    {
-                        DestroyIcon(handle);
-                    }
-                }
+                if (icon == null) throw new InvalidOperationException("Unable to extract the application icon.");
+                return (Icon)icon.Clone();
             }
         }
     }

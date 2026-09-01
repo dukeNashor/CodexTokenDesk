@@ -4,6 +4,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $compiler = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $outputDirectory = Join-Path $root "dist\CodexTokenDesk"
 $output = Join-Path $outputDirectory "CodexTokenDesk.exe"
+$appIcon = Join-Path $outputDirectory "CodexTokenDesk.ico"
 $manifest = Join-Path $root "tray\app.manifest"
 $sources = Get-ChildItem -LiteralPath (Join-Path $root "tray") -Filter "*.cs" | Select-Object -ExpandProperty FullName
 $trayIconDirectory = Join-Path $root "assets\tray"
@@ -12,7 +13,7 @@ $trayIconGenerator = Join-Path $root "scripts\generate-tray-icons.ps1"
 if (-not (Test-Path -LiteralPath $compiler)) { throw ".NET Framework 4.8 compiler was not found." }
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 
-& $trayIconGenerator -OutputDirectory $trayIconDirectory
+& $trayIconGenerator -OutputDirectory $trayIconDirectory -IconOutputPath $appIcon
 
 $compilerArguments = @(
     "/nologo",
@@ -21,6 +22,7 @@ $compilerArguments = @(
     "/optimize+",
     "/debug-",
     "/out:$output",
+    "/win32icon:$appIcon",
     "/win32manifest:$manifest",
     "/reference:System.dll",
     "/reference:System.Core.dll",
@@ -29,11 +31,6 @@ $compilerArguments = @(
     "/reference:System.Runtime.Serialization.dll",
     "/reference:System.Windows.Forms.dll"
 )
-
-foreach ($state in @("running", "starting", "stopping", "faulted", "stopped")) {
-    $resourcePath = Join-Path $trayIconDirectory ("context-halo-{0}-16.png" -f $state)
-    $compilerArguments += "/resource:$resourcePath,CodexTokenDesk.Tray.$state.png"
-}
 
 $compilerArguments += $sources
 & $compiler $compilerArguments
