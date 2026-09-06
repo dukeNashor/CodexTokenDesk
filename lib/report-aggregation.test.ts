@@ -239,6 +239,37 @@ describe("report aggregation", () => {
     expect(buckets[0]).toMatchObject({ model: "GPT-5.6 Terra", rawTokens: 100, weightedTokens: 50 });
   });
 
+  it.each([
+    ["otherNonCachedInput", 10],
+    ["cachedInput", 1],
+    ["cacheWriteInput", 12.5],
+    ["ordinaryOutput", 50],
+    ["reasoningOutput", 50],
+  ] as const)("prices Astra %s at the official standard rate", (field, expectedUsd) => {
+    const item = turn("astra", "2026-09-06", 1_000_000, "gpt-6-astra");
+    item.breakdown.otherNonCachedInput = 0;
+    item.breakdown[field] = 1_000_000;
+    expect(aggregateModelUsage([item])).toEqual([{
+      model: "GPT-6 Astra", rawTokens: 1_000_000, weightedTokens: 2_500_000,
+      estimatedUsd: expectedUsd, rateMultiplier: 2.5, rateStatus: "official",
+    }]);
+  });
+
+  it("exposes Astra in report summaries and navigation while retaining unknown-model fallback", () => {
+    const result = buildScopedProjectReport({
+      reports: [report("astra", "D:/alpha", turn("astra-turn", "2026-09-06", 100, "gpt-6-astra"))],
+      projects, projectIdByThread: new Map([["astra", "p1"]]),
+      sourceRoots: [], parseErrors: {}, candidateRolloutCount: 1, pollIntervalMs: 3000,
+      query: { selectedSessionIds: ["astra"], range: "all" },
+    });
+    expect(result.summary.modelUsage[0]).toMatchObject({ model: "GPT-6 Astra", estimatedUsd: 0.001, rateStatus: "official" });
+    expect(result.navigationModelUsage).toEqual([{ model: "GPT-6 Astra", rawTokens: 100 }]);
+    expect(result.navigationSessions[0].metadata.primaryModel).toBe("GPT-6 Astra");
+    expect(aggregateModelUsage([turn("unknown", "2026-09-06", 100, "gpt-6-unknown")])[0]).toMatchObject({
+      rateStatus: "unconfigured", estimatedUsd: 0.0004, rateMultiplier: 1,
+    });
+  });
+
   it("combines selected projects while keeping full messages out of the session index", () => {
     const reports = [report("alpha", "D:/alpha", turn("alpha-turn", "2026-01-01", 100)), report("beta", "D:/beta", turn("beta-turn", "2026-01-01", 60))];
     const result = buildScopedProjectReport({

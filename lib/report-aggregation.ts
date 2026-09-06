@@ -37,9 +37,10 @@ type BuildReportInput = {
   query: ReportQuery;
 };
 
-const OFFICIAL_RATE_SOURCE = "https://developers.openai.com/api/docs/models/gpt-5.6-sol";
+const OFFICIAL_RATE_SOURCE = "https://developers.openai.com/api/docs/pricing";
 const SOL_RATE: ModelRate = { input: 4, cached: 0.4, cacheWrite: 5, output: 20 };
 const RATE_CARD: Record<string, { label: string; rate: ModelRate }> = {
+  "gpt-6-astra": { label: "GPT-6 Astra", rate: { input: 10, cached: 1, cacheWrite: 12.5, output: 50 } },
   "gpt-5.6-sol": { label: "GPT-5.6 Sol", rate: SOL_RATE },
   "gpt-5.6": { label: "GPT-5.6 Sol", rate: SOL_RATE },
   "gpt-5.6-terra": { label: "GPT-5.6 Terra", rate: { input: 2, cached: 0.2, cacheWrite: 2.5, output: 12 } },
@@ -54,9 +55,9 @@ const PLAN_EXCLUDED_MODELS = new Set(["gpt-5.3-codex-spark"]);
 
 export const RATE_CARD_METADATA: RateCardMetadata = {
   source: OFFICIAL_RATE_SOURCE,
-  effectiveDate: "2026-08-24",
-  checkedAt: "2026-08-24T00:00:00+08:00",
-  basis: "公开 API 文本 Token 费率；长上下文、区域处理和工具调用附加费未计入",
+  effectiveDate: "2026-09-06",
+  checkedAt: "2026-09-06T00:00:00+08:00",
+  basis: "按公开 API 标准短上下文文本 Token 费率估算；当前报表缺少逐请求输入量和处理模式，未计入长上下文、Fast、Batch/Flex、区域处理和工具调用费用调整；缓存写入仅按日志已记录的用量计算",
   sol: SOL_RATE,
 };
 

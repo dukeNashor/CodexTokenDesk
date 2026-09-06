@@ -60,6 +60,7 @@ describe("session navigation filtering", () => {
   });
 
   it("matches the legacy model watermark labels and Spark color", () => {
+    expect(modelWatermarkLabel("GPT-6 Astra")).toBe("ASTRA");
     expect(modelWatermarkLabel("GPT-5.6 Sol")).toBe("SOL");
     expect(modelWatermarkLabel("GPT-5.4 mini")).toBe("5.4 MINI");
     expect(modelWatermarkLabel("GPT-5.3 Codex")).toBe("5.3 CODEX");

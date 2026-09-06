@@ -48,6 +48,7 @@ export function ModelUsageDonuts({ models, sessions, rateCard, unit, selectedMod
 }) {
   return <section className="model-pie-view">
     <div className="model-rate-meta">费率核验于 {rateCard.checkedAt.slice(0, 10)}</div>
+    <div className="model-rate-meta">{rateCard.basis} · <a href={rateCard.source} target="_blank" rel="noreferrer">官方费率表</a></div>
     {planExcluded.rawTokens > 0 && <div className="model-plan-note"><span>◇</span><div><strong>Spark 单独列示</strong><br />{formatTokens(planExcluded.rawTokens, unit)} Token / {planExcluded.turnCount} 轮不参与 Sol 等价比较。</div></div>}
     <div className="pie-grid"><Donut title="原始 Token" caption="各模型实际记录的 Token" models={models} sessions={sessions} weighted={false} unit={unit} selectedModels={selectedModels} onToggleModel={onToggleModel} onSelectSession={onSelectSession} /><Donut title="Sol 等价 Token" caption="按公开文本费率折算" models={models} sessions={sessions} weighted unit={unit} selectedModels={selectedModels} onToggleModel={onToggleModel} onSelectSession={onSelectSession} /></div>
   </section>;

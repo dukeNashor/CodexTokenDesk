@@ -3,6 +3,7 @@ import type { NavigationModelUsageBucket, SessionNavigationItem } from "@/lib/ty
 export type SummarySelectionView = "project" | "recent";
 
 const MODEL_WATERMARK_LABELS: Record<string, string> = {
+  "gpt-6 astra": "ASTRA",
   "gpt-5.6 sol": "SOL",
   "gpt-5.6 terra": "TERRA",
   "gpt-5.6 luna": "LUNA",
