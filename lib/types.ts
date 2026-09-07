@@ -86,6 +86,7 @@ export type TurnReport = {
   compactions: number;
   warnings: string[];
   usage: Usage;
+  requestUsage?: RequestUsage[];
   dailyUsage: Array<{ date: string; usage: Usage }>;
   dailyModelResponses: Record<string, number>;
   dailyTokenSnapshots: Record<string, number>;
@@ -112,6 +113,32 @@ export type TurnReport = {
     usage: Usage;
     categories: Record<string, number>;
   };
+};
+
+export type RequestUsage = {
+  timestamp: string;
+  model: string | null;
+  serviceTier: string | null;
+  usage: Usage;
+  // Null when a cumulative delta cannot be reconciled to one request.
+  inputTokens: number | null;
+  usageComplete: boolean;
+};
+
+export type SubscriptionModelUsage = {
+  model: string;
+  estimatedCredits: number | null;
+  rawTokens: number;
+  fastRequests: number;
+  longContextRequests: number;
+  peakInputTokens: number | null;
+  issues: string[];
+};
+
+export type SubscriptionUsage = {
+  estimatedCredits: number;
+  unpricedTokens: number;
+  models: SubscriptionModelUsage[];
 };
 
 export type RolloutMetadata = {
@@ -233,6 +260,7 @@ export type AggregatedTurnReport = TurnReport & {
 };
 
 export type ProjectSessionSummary = {
+  subscriptionUsage: SubscriptionUsage;
   turnCount: number;
   statusCounts: Record<string, number>;
   zeroUsageTurns: number;
@@ -335,6 +363,7 @@ export type ProjectReport = {
   };
   summary: {
     sessionCount: number;
+    subscriptionUsage: SubscriptionUsage;
     turnCount: number;
     finalUsage: Usage;
     finalBreakdown: TurnReport["breakdown"];

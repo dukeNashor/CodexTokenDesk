@@ -5,14 +5,17 @@ import { useEffect, useMemo, useState } from "react";
 import { CumulativeChart, TurnCompositionChart, TurnHeatTable } from "@/components/analysis-charts";
 import { InfoIcon } from "@/components/icons";
 import { ModelUsageDonuts } from "@/components/model-usage-donuts";
+import { SubscriptionUsageCard } from "@/components/subscription-usage";
+import { LcdNumber } from "@/components/lcd-number";
+import { formatCreditUsd } from "@/lib/credit-display";
 import { SessionNavigator, type NavigationView } from "@/components/session-navigator";
 import { TokenContextRing } from "@/components/token-context-ring";
 import { TurnDetailDrawer } from "@/components/turn-detail-drawer";
 import { usePolling } from "@/hooks/use-polling";
 import { filterNavigationSessions, retainAvailableModelSelection, summarySessionIds } from "@/lib/session-navigation";
-import { formatCount, formatTokens, isLcdValue, TOKEN_UNIT_LABELS, TOKEN_UNIT_ORDER, type TokenUnit } from "@/lib/token-display";
+import { formatCount, formatTokens, TOKEN_UNIT_LABELS, TOKEN_UNIT_ORDER, type TokenUnit } from "@/lib/token-display";
 import { DEFAULT_VISIBLE_TOOL_CATEGORIES, toolCategoryColor, toolCategoryLabel } from "@/lib/tool-display";
-import type { AggregatedTurnReport, LiveSnapshot, ProjectSession, ProjectSessionListItem, ToolCall, Usage, WarningRecord } from "@/lib/types";
+import type { AggregatedTurnReport, LiveSnapshot, ProjectSession, ProjectSessionListItem, SubscriptionUsage, ToolCall, Usage, WarningRecord } from "@/lib/types";
 
 type Range = "today" | "7d" | "30d" | "all" | "custom";
 type View = "total" | "session";
@@ -69,16 +72,20 @@ function PrivacyInfo() {
   return <details className="privacy-info"><summary aria-label="数据与隐私说明"><InfoIcon /></summary><div role="note"><strong>本机数据</strong><span>报告只读取本机 rollout；完整消息不会发送到外部。</span></div></details>;
 }
 
-function SummaryBrief({ usage, turns, tools, compactions, unit, stacked = false }: { usage: Usage; turns: number; tools: number; compactions: number; unit: TokenUnit; stacked?: boolean }) {
-  const total = formatTokens(usage.total, unit);
-  const turnCount = formatCount(turns);
-  const cached = formatTokens(usage.cached, unit);
-  return <section className={`summary-brief${stacked ? " stacked" : ""}`} aria-label="实时摘要"><div className="brief-head"><span>实时摘要</span></div><div className="brief-grid">
-    <div className="brief-item"><span className="label">总 Token</span><strong className={`value${isLcdValue(total) ? " lcd-value" : ""}`}>{total}</strong><small className="note">输入 {formatTokens(usage.input, unit)} · 输出 {formatTokens(usage.output, unit)}</small></div>
-    <div className="brief-item"><span className="label">轮次</span><strong className={`value${isLcdValue(turnCount) ? " lcd-value" : ""}`}>{turnCount}</strong><small className="note">当前会话与日期范围</small></div>
-    <div className="brief-item"><span className="label">缓存输入</span><strong className={`value${isLcdValue(cached) ? " lcd-value" : ""}`}>{cached}</strong><small className="note">{usage.input ? `${(100 * usage.cached / usage.input).toFixed(1)}% 输入命中` : "无输入"}</small></div>
-    <div className="brief-item"><span className="label">工具 / 压缩</span><strong className="value">{formatCount(tools)} / {formatCount(compactions)}</strong><small className="note">工具调用 / Context Compaction</small></div>
-  </div></section>;
+function SummaryBrief({ usage, subscription, turns, tools, compactions, unit }: { usage: Usage; subscription: SubscriptionUsage; turns: number; tools: number; compactions: number; unit: TokenUnit }) {
+  return <section className="session-meters" aria-label="实时摘要">
+    <div className="meter-primary">
+      <div className="meter"><div className="meter-label">订阅消耗 <span className="estimate-tag">估算</span></div><LcdNumber value={formatCreditUsd(subscription.estimatedCredits)} /><small>当前范围 · 美元等值 · 全价估算{subscription.unpricedTokens > 0 ? " · 含未定价用量" : ""}</small></div>
+      <div className="meter"><div className="meter-label">总 Token</div><LcdNumber value={formatTokens(usage.total, unit)} /><small>当前会话与日期范围</small></div>
+    </div>
+    <div className="meter-secondary">
+      <div><span>轮次</span><LcdNumber value={formatCount(turns)} small /></div>
+      <div><span>缓存命中率</span><LcdNumber value={usage.input ? (100 * usage.cached / usage.input).toFixed(1) : "—"} unit={usage.input ? "%" : undefined} small /></div>
+      <div><span>工具调用</span><LcdNumber value={formatCount(tools)} small /></div>
+      <div><span>压缩次数</span><LcdNumber value={formatCount(compactions)} small /></div>
+    </div>
+    <details className="meter-token-details"><summary>输入与输出明细</summary><div><span>输入 <b>{formatTokens(usage.input, unit)}</b></span><span>缓存输入 <b>{formatTokens(usage.cached, unit)}</b></span><span>输出 <b>{formatTokens(usage.output, unit)}</b></span></div></details>
+  </section>;
 }
 
 function WarningsPanel({ warnings, integrityErrors, warningCount }: { warnings: WarningRecord[]; integrityErrors: number; warningCount: number }) {
@@ -266,13 +273,14 @@ export function Dashboard() {
         {error && <div className="alert error"><strong>实时服务异常：</strong> {error}</div>}
         <div className="report-content">
           {view === "total" ? <>
-            <section className="hero"><div className="hero-copy"><p className="kicker">MULTI-SESSION OVERVIEW</p><h1>{report.metadata.scope.label}</h1><p className="path">{selectedProjectCount} 个项目 · {summarySelectionIds.length} 个会话 · {report.metadata.live.selectedRolloutCount} 个 rollout · {report.metadata.selection.timeZone}</p></div><SummaryBrief usage={report.summary.finalUsage} turns={report.summary.turnCount} tools={report.summary.toolCallCount} compactions={sessions.reduce((sum, session) => sum + session.summary.contextCompactions, 0)} unit={unit} /></section>
-            {!summarySelectionIds.length ? <div className="empty-state scoped-empty"><h2>{navigationView === "project" ? "当前筛选没有会话" : "尚未选择会话"}</h2><p>{navigationView === "project" ? "调整日期、模型或搜索条件后再查看。" : "在最近列表中勾选一个或多个会话。"}</p></div> : report.summary.sessionCount === 0 ? <div className="empty-state scoped-empty"><h2>当前范围无活动</h2><p>会话仍保留在最近列表；可切换日期范围查看历史统计。</p></div> : <><ModelUsageDonuts models={report.summary.modelUsage} sessions={filteredSessions} rateCard={report.metadata.rateCard} unit={unit} selectedModels={selectedModels} onToggleModel={toggleModel} onSelectSession={openSession} planExcluded={report.summary.planExcludedUsage} /><DailyUsage daily={report.summary.dailyUsage} unit={unit} /></>}
+            <section className="hero"><div className="hero-copy"><p className="kicker">MULTI-SESSION OVERVIEW</p><h1>{report.metadata.scope.label}</h1><p className="path">{selectedProjectCount} 个项目 · {summarySelectionIds.length} 个会话 · {report.metadata.live.selectedRolloutCount} 个 rollout · {report.metadata.selection.timeZone}</p></div><SummaryBrief subscription={report.summary.subscriptionUsage} usage={report.summary.finalUsage} turns={report.summary.turnCount} tools={report.summary.toolCallCount} compactions={sessions.reduce((sum, session) => sum + session.summary.contextCompactions, 0)} unit={unit} /></section>
+            {!summarySelectionIds.length ? <div className="empty-state scoped-empty"><h2>{navigationView === "project" ? "当前筛选没有会话" : "尚未选择会话"}</h2><p>{navigationView === "project" ? "调整日期、模型或搜索条件后再查看。" : "在最近列表中勾选一个或多个会话。"}</p></div> : report.summary.sessionCount === 0 ? <div className="empty-state scoped-empty"><h2>当前范围无活动</h2><p>会话仍保留在最近列表；可切换日期范围查看历史统计。</p></div> : <><SubscriptionUsageCard usage={report.summary.subscriptionUsage} unit={unit} detailsOnly /><ModelUsageDonuts models={report.summary.modelUsage} sessions={filteredSessions} rateCard={report.metadata.rateCard} unit={unit} selectedModels={selectedModels} onToggleModel={toggleModel} onSelectSession={openSession} planExcluded={report.summary.planExcludedUsage} /><DailyUsage daily={report.summary.dailyUsage} unit={unit} /></>}
           </> : selected ? <>
             <section className="session-overview" style={{ "--model-color": modelColor(selected.metadata.primaryModel) } as React.CSSProperties}>
               <header className="session-overview-head"><div className="session-title-row"><button className="back-total" type="button" onClick={() => setView("total")}>← 返回总览</button><div><h1 title={selected.metadata.title}>{selected.metadata.title}</h1><p>{selected.metadata.projectLabel}<span aria-hidden="true">·</span>{selected.metadata.primaryModel}</p></div></div></header>
-              <div className="session-overview-grid"><div className="session-ring-panel"><TokenContextRing turns={visibleTurns} selectedId={drawerTurn?.turnId ?? null} selectedToolCategories={toolCategories} unit={unit} onSelectTurn={openTurn} onSelectTool={openTool} /></div><SummaryBrief stacked usage={selected.summary.finalUsage} turns={selected.summary.turnCount} tools={selected.summary.toolCallCount} compactions={selected.summary.contextCompactions} unit={unit} /></div>
+              <SummaryBrief subscription={selected.summary.subscriptionUsage} usage={selected.summary.finalUsage} turns={selected.summary.turnCount} tools={selected.summary.toolCallCount} compactions={selected.summary.contextCompactions} unit={unit} /><div className="session-overview-grid"><div className="session-ring-panel"><TokenContextRing turns={visibleTurns} selectedId={drawerTurn?.turnId ?? null} selectedToolCategories={toolCategories} unit={unit} onSelectTurn={openTurn} onSelectTool={openTool} /></div></div>
             </section>
+            <SubscriptionUsageCard usage={selected.summary.subscriptionUsage} unit={unit} detailsOnly />
             {selected.summary.turnCount === 0 && <div className="range-empty-note">当前日期范围内没有活动；该会话仍可查看和导航。</div>}
             <section className="analysis-controls">
               <div className="filter-row"><label className="search-field"><span>⌕</span><input type="search" value={turnQuery} onChange={(event) => setTurnQuery(event.target.value)} placeholder="搜索 ID、来源、模型或消息全文" /></label><fieldset className="filter-group"><legend>状态</legend>{(["complete", "aborted", "incomplete"] as const).map((status) => <label className="filter-option" key={status}><input type="checkbox" checked={statuses.has(status)} onChange={() => toggleStatus(status)} />{status}</label>)}</fieldset>{tab === "composition" && <fieldset className="filter-group"><legend>刻度</legend>{(["linear", "log"] as const).map((item) => <label className="filter-option" key={item}><input type="radio" checked={scale === item} onChange={() => setScale(item)} />{item === "linear" ? "线性" : "对数"}</label>)}</fieldset>}<span className="visible-count">显示 {visibleTurns.length} 轮</span><button className="reset-filters" type="button" onClick={resetAnalysisFilters}>清除筛选</button></div>

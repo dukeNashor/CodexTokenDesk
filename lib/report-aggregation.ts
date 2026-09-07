@@ -1,4 +1,5 @@
 import { addUsage, sessionTitle } from "@/lib/rollout-parser";
+import { aggregateSubscriptionUsage } from "@/lib/subscription-billing";
 import type {
   AggregatedTurnReport,
   ModelRate,
@@ -57,7 +58,7 @@ export const RATE_CARD_METADATA: RateCardMetadata = {
   source: OFFICIAL_RATE_SOURCE,
   effectiveDate: "2026-09-06",
   checkedAt: "2026-09-06T00:00:00+08:00",
-  basis: "按公开 API 标准短上下文文本 Token 费率估算；当前报表缺少逐请求输入量和处理模式，未计入长上下文、Fast、Batch/Flex、区域处理和工具调用费用调整；缓存写入仅按日志已记录的用量计算",
+  basis: "Sol 等价仅用于模型用量比较，沿用公开 API 标准短上下文文本费率，不代表订阅扣费；此指标不应用长上下文、Fast、Batch/Flex 或附加费，订阅积分另见上方卡片",
   sol: SOL_RATE,
 };
 
@@ -271,6 +272,7 @@ function summarizeTurns(turns: AggregatedTurnReport[], warnings: WarningRecord[]
     toolUsage,
     toolCategories,
     modelUsage: aggregateModelUsage(turns),
+    subscriptionUsage: aggregateSubscriptionUsage(turns),
     planExcludedUsage: aggregatePlanExcludedUsage(turns),
     dailyUsage: dailyUsageForTurns(turns, timeZone),
     integrityErrorCount: warnings.filter((warning) => warning.severity === "error").length,
@@ -448,6 +450,7 @@ export function buildScopedProjectReport(input: BuildReportInput): ProjectReport
       warningCount: summary.warningCount,
       dailyUsage: summary.dailyUsage,
       modelUsage: summary.modelUsage,
+      subscriptionUsage: summary.subscriptionUsage,
       planExcludedUsage: summary.planExcludedUsage,
     },
     warnings: allWarnings,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { LcdNumber } from "@/components/lcd-number";
 
 import { formatTokens, type TokenUnit } from "@/lib/token-display";
 import type { AggregatedTurnReport } from "@/lib/types";
@@ -46,7 +47,7 @@ export function CumulativeChart({ turns, unit, onSelect }: { turns: AggregatedTu
   const points = turns.map((turn, index) => { running += turn.usage.total; return { turn, total: running, x: margin.left + innerWidth * (index / Math.max(1, turns.length - 1)) }; });
   const max = Math.max(1, running);
   const pointText = points.map((point) => `${point.x.toFixed(2)},${(margin.top + innerHeight * (1 - point.total / max)).toFixed(2)}`).join(" ");
-  return <div className="chart-card"><header className="chart-head"><div><h3>累计 Token 趋势</h3><p>按当前筛选顺序累计</p></div><strong className="lcd-small">{formatTokens(running, unit)}</strong></header><div className="chart-scroll"><svg className="turn-chart" viewBox={`0 0 ${width} ${height}`} style={{ minWidth: width }} role="img" aria-label="累计 Token 趋势图">
+  return <div className="chart-card"><header className="chart-head"><div><h3>累计 Token 趋势</h3><p>按当前筛选顺序累计</p></div><LcdNumber value={formatTokens(running, unit)} small /></header><div className="chart-scroll"><svg className="turn-chart" viewBox={`0 0 ${width} ${height}`} style={{ minWidth: width }} role="img" aria-label="累计 Token 趋势图">
     {[0, .25, .5, .75, 1].map((fraction) => { const y = margin.top + innerHeight * (1 - fraction); return <g key={fraction}><line x1={margin.left} x2={width - margin.right} y1={y} y2={y} className="grid-line" /><text x={margin.left - 9} y={y + 4} textAnchor="end" className="axis-label">{formatTokens(max * fraction, unit)}</text></g>; })}
     <polyline points={pointText} fill="none" stroke="#3b8b78" strokeWidth="3" strokeLinejoin="round" />
     {points.map((point, index) => { const y = margin.top + innerHeight * (1 - point.total / max); return <g key={`${point.turn.sourceRolloutId}-${point.turn.turnId}`} className="trend-point" role="button" tabIndex={0} onClick={() => onSelect(point.turn)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(point.turn); } }}><circle cx={point.x} cy={y} r="5" /><text x={point.x} y={height - 20} textAnchor="middle" className="axis-label">{index + 1}</text><title>第 {point.turn.index} 轮 · 累计 {formatTokens(point.total, unit)}</title></g>; })}

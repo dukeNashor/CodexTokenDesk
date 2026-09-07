@@ -263,6 +263,9 @@ describe("report aggregation", () => {
       query: { selectedSessionIds: ["astra"], range: "all" },
     });
     expect(result.summary.modelUsage[0]).toMatchObject({ model: "GPT-6 Astra", estimatedUsd: 0.001, rateStatus: "official" });
+    expect(result.summary.subscriptionUsage.estimatedCredits).toBeCloseTo(0.025);
+    expect(result.selectedSession?.summary.subscriptionUsage).toEqual(result.summary.subscriptionUsage);
+    expect(result.summary.subscriptionUsage.models[0].issues).toContain("mode_missing");
     expect(result.navigationModelUsage).toEqual([{ model: "GPT-6 Astra", rawTokens: 100 }]);
     expect(result.navigationSessions[0].metadata.primaryModel).toBe("GPT-6 Astra");
     expect(aggregateModelUsage([turn("unknown", "2026-09-06", 100, "gpt-6-unknown")])[0]).toMatchObject({

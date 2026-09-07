@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { SubscriptionUsageCard } from "@/components/subscription-usage";
+import { aggregateSubscriptionUsage } from "@/lib/subscription-billing";
 
 import { formatTokens, type TokenUnit } from "@/lib/token-display";
 import type { AggregatedTurnReport, ToolCall } from "@/lib/types";
@@ -44,6 +46,7 @@ export function TurnDetailDrawer({ turn, tool, unit, onClose }: { turn: Aggregat
           <span>其他输入 <b>{formatTokens(turn.breakdown.otherNonCachedInput, unit)}</b></span><span>普通输出 <b>{formatTokens(turn.breakdown.ordinaryOutput, unit)}</b></span>
           <span>推理输出 <b>{formatTokens(turn.breakdown.reasoningOutput, unit)}</b></span><span>工具调用 <b>{turn.toolSummary.callCount}</b></span>
         </div></section>
+        <SubscriptionUsageCard usage={aggregateSubscriptionUsage([turn])} unit={unit} />
         <section className="drawer-section"><h3>用户消息</h3>{turn.messages.length ? turn.messages.map((message, index) => <article className="message-block" key={`${message.timestamp}-${index}`}><time>{formatDate(message.timestamp)}</time><pre>{message.text}</pre></article>) : <p className="empty-copy">没有记录用户消息。</p>}</section>
         <section className="drawer-section"><h3>Agent 输出</h3>{turn.outputs.length ? turn.outputs.map((output, index) => <article className="message-block output" key={`${output.timestamp}-${index}`}><time>{formatDate(output.timestamp)}{output.phase ? ` · ${output.phase}` : ""}</time><pre>{output.text}</pre></article>) : <p className="empty-copy">没有记录 Agent 输出。</p>}</section>
         {turn.contextCompactions.length > 0 && <section className="drawer-section"><h3>Compaction</h3>{turn.contextCompactions.map((event, index) => <div className="compaction-row" key={`${event.timestamp}-${index}`}><time>{formatDate(event.timestamp)}</time><strong>{event.before?.tokens === null || event.before === null ? "未知" : formatTokens(event.before.tokens, unit)} → {event.after?.tokens === null || event.after === null ? "未知" : formatTokens(event.after.tokens, unit)}</strong></div>)}</section>}

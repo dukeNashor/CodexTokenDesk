@@ -5,6 +5,7 @@ import type {
   ContextCompaction,
   ContextSnapshot,
   RolloutReport,
+  RequestUsage,
   ToolCall,
   TurnMessage,
   TurnOutput,
@@ -13,7 +14,7 @@ import type {
   WarningRecord,
 } from "@/lib/types";
 
-export const PARSER_VERSION = "3.0.0-ts";
+export const PARSER_VERSION = "3.1.0-ts";
 
 const TOOL_EVENT_TYPES = new Set([
   "tool_call", "tool_use", "function_call", "custom_tool_call", "computer_call",
@@ -42,6 +43,9 @@ type MutableTurn = {
   messages: TurnMessage[];
   outputs: TurnOutput[];
   models: string[];
+  activeModel: string | null;
+  serviceTier: string | null;
+  requestUsage: RequestUsage[];
   efforts: string[];
   contextWindows: number[];
   tokenSnapshots: number;
@@ -327,6 +331,7 @@ function makeTurn(index: number, turnId: string, timestamp: string, line: number
     index, turnId, startedAt: timestamp, startedLine: line, startUsage: usage, endUsage: usage,
     status: "incomplete", endedAt: null, durationMs: null, timeToFirstTokenMs: null, abortReason: null,
     messages: [], outputs: [], models: [], efforts: [], contextWindows: [], tokenSnapshots: 0,
+    activeModel: null, serviceTier: null, requestUsage: [],
     modelResponses: 0, compactions: 0, warningCodes: [], dailyUsage: new Map(),
     dailyModelResponses: new Map(), dailyTokenSnapshots: new Map(), latestContextSnapshot: null,
     contextTimeline: [], contextCompactions: [], toolCalls: [], rangeUsage: zeroUsage(),
@@ -390,6 +395,7 @@ function turnReport(turn: MutableTurn, cacheWriteAvailable: boolean): TurnReport
     messages: turn.messages, outputs: turn.outputs, models: turn.models, efforts: turn.efforts,
     contextWindows: turn.contextWindows, tokenSnapshots: turn.tokenSnapshots, modelResponses: turn.modelResponses,
     compactions: turn.compactions, warnings: turn.warningCodes, usage, dailyUsage,
+    requestUsage: turn.requestUsage,
     dailyModelResponses: Object.fromEntries(turn.dailyModelResponses),
     dailyTokenSnapshots: Object.fromEntries(turn.dailyTokenSnapshots), breakdown, breakdownMismatch: mismatch,
     rangeClipped: false, rangeFirstActivityAt: turn.rangeFirstActivityAt, rangeLastActivityAt: turn.rangeLastActivityAt,
@@ -523,6 +529,8 @@ export function parseRollout(filePath: string, options: { tolerateLive?: boolean
       const target = turnsById.get(text(payload.turn_id)) ?? current;
       if (target) {
         uniquePush(target.models, firstText(payload.model, payload.model_name));
+        target.activeModel = firstText(payload.model, payload.model_name) || null;
+        target.serviceTier = firstText(payload.service_tier) || null;
         const mode = record(payload.collaboration_mode);
         uniquePush(target.efforts, firstText(payload.effort, record(mode.settings).reasoning_effort));
         uniquePush(target.contextWindows, nonNegative(payload.model_context_window));
@@ -647,6 +655,19 @@ export function parseRollout(filePath: string, options: { tolerateLive?: boolean
         if (pendingCompaction && !pendingCompaction.after) pendingCompaction.after = snapshotPayload(latestContext);
       }
       if (current) {
+        if (delta.total > 0) {
+          const reconciled = lastUsage.known.has("input") && lastUsage.known.has("output")
+            && lastUsage.known.has("cached")
+            && (["input", "cached", "output", "total"] as const).every((key) => lastUsage.usage[key] === delta[key]);
+          current.requestUsage.push({
+            timestamp,
+            model: firstText(info.model) || current.activeModel,
+            serviceTier: firstText(info.service_tier) || current.serviceTier,
+            usage: delta,
+            inputTokens: reconciled ? lastUsage.usage.input : null,
+            usageComplete: reconciled,
+          });
+        }
         current.endUsage = rawUsage;
         current.tokenSnapshots += 1;
         if (delta.total > 0) current.modelResponses += 1;
