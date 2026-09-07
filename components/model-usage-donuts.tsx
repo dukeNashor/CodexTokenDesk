@@ -1,5 +1,6 @@
 "use client";
 
+import { LcdTag } from "@/components/lcd-tag";
 import { formatTokens, type TokenUnit } from "@/lib/token-display";
 import { arcBandPath, donutSegments } from "@/lib/visualization-geometry";
 import type { ModelUsageBucket, ProjectSessionListItem, RateCardMetadata } from "@/lib/types";
@@ -28,7 +29,7 @@ function Donut({ title, caption, models, sessions, weighted, unit, selectedModel
   const total = models.reduce((sum, bucket) => sum + value(bucket), 0);
   const modelSegments = donutSegments(models, value);
   const sessionSegments = donutSegments(sessions, (session) => weighted ? session.summary.modelUsage.reduce((sum, bucket) => sum + bucket.weightedTokens, 0) : session.summary.finalUsage.total);
-  return <article className="pie-card"><header className="pie-card-head"><div><h3>{title}</h3><p>{caption}</p></div><span className="pie-card-kicker">{weighted ? "SOL EQ" : "RAW"}</span></header><div className="pie-chart-wrap"><svg viewBox="0 0 360 340" role="img" aria-label={title}>
+  return <article className="pie-card"><header className="pie-card-head" title={caption}><div><h3>{title}</h3></div><LcdTag className="pie-card-kicker">{weighted ? "SOL EQ" : "RAW"}</LcdTag></header><div className="pie-chart-wrap"><svg viewBox="0 0 360 340" role="img" aria-label={title}>
     <path d={arcBandPath(180, 165, 78, 122, 0, 1)} fill="#ece5da" />
     {modelSegments.map(({ item, start, end }) => <path key={item.model} d={arcBandPath(180, 165, 78, 122, start, end)} fill={modelColor(item.model)} className={`donut-sector${selectedModels.size && !selectedModels.has(item.model) ? " dim" : ""}`} role="button" tabIndex={0} aria-label={`${item.model}，${formatTokens(value(item), unit)}`} onClick={() => onToggleModel(item.model)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onToggleModel(item.model); } }}><title>{item.model} · {formatTokens(value(item), unit)}</title></path>)}
     {sessionSegments.map(({ item, start, end, value: sessionValue }) => <path key={item.metadata.threadId} d={arcBandPath(180, 165, 132, 143, start, end)} fill={modelColor(item.metadata.primaryModel)} className="session-donut-sector" role="button" tabIndex={0} aria-label={`${item.metadata.title}，${formatTokens(sessionValue, unit)} Token`} onDoubleClick={() => onSelectSession(item)} onKeyDown={(event) => { if (event.key === "Enter") onSelectSession(item); }}><title>双击进入 · {item.metadata.title} · {formatTokens(sessionValue, unit)}</title></path>)}
@@ -47,8 +48,8 @@ export function ModelUsageDonuts({ models, sessions, rateCard, unit, selectedMod
   planExcluded: { models: string[]; rawTokens: number; turnCount: number };
 }) {
   return <section className="model-pie-view">
-    <div className="model-rate-meta">费率核验于 {rateCard.checkedAt.slice(0, 10)}</div>
-    <div className="model-rate-meta">{rateCard.basis} · <a href={rateCard.source} target="_blank" rel="noreferrer">官方费率表</a></div>
+    <details className="model-rate-meta"><summary>Sol 等价依据</summary><p>费率 {rateCard.checkedAt.slice(0, 10)}</p>
+    <p>{rateCard.basis} · <a href={rateCard.source} target="_blank" rel="noreferrer">官方费率表</a></p></details>
     {planExcluded.rawTokens > 0 && <div className="model-plan-note"><span>◇</span><div><strong>Spark 单独列示</strong><br />{formatTokens(planExcluded.rawTokens, unit)} Token / {planExcluded.turnCount} 轮不参与 Sol 等价比较。</div></div>}
     <div className="pie-grid"><Donut title="原始 Token" caption="各模型实际记录的 Token" models={models} sessions={sessions} weighted={false} unit={unit} selectedModels={selectedModels} onToggleModel={onToggleModel} onSelectSession={onSelectSession} /><Donut title="Sol 等价 Token" caption="按公开文本费率折算" models={models} sessions={sessions} weighted unit={unit} selectedModels={selectedModels} onToggleModel={onToggleModel} onSelectSession={onSelectSession} /></div>
   </section>;

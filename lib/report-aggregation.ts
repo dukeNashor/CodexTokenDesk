@@ -314,6 +314,7 @@ export function buildScopedProjectReport(input: BuildReportInput): ProjectReport
     if (!projectId) continue;
     const project = input.projects.find((candidate) => candidate.id === projectId);
     if (!project) continue;
+    const contextBaselines = new Map<string, number | null>();
     const allTurns = members.flatMap((member) => member.turns
       .map<AggregatedTurnReport>((turn) => ({
         ...turn,
@@ -324,7 +325,11 @@ export function buildScopedProjectReport(input: BuildReportInput): ProjectReport
         parentThreadId: member.metadata.sessionMeta.parentThreadId,
       })))
       .sort((left, right) => (left.contextSnapshot.timestamp || left.endedAt || left.startedAt).localeCompare(right.contextSnapshot.timestamp || right.endedAt || right.startedAt) || left.sourceRolloutId.localeCompare(right.sourceRolloutId) || left.sourceTurnIndex - right.sourceTurnIndex)
-      .map((turn, index) => ({ ...turn, index: index + 1 }));
+      .map((turn, index) => {
+        const contextBaselineRate = contextBaselines.has(turn.sourceRolloutId) ? contextBaselines.get(turn.sourceRolloutId)! : 0;
+        contextBaselines.set(turn.sourceRolloutId, turn.contextSnapshot.occupancyRate);
+        return { ...turn, index: index + 1, contextBaselineRate };
+      });
     const rangeTurns = allTurns.filter((turn) => turnInDate(turn, timeZone, date.from, date.to)).map((turn, index) => ({ ...turn, index: index + 1 }));
     const warnings = members.flatMap((member) => member.warnings.map((warning) => ({ ...warning, message: `${member.metadata.sourceName}: ${warning.message}` })));
     const title = input.threadNames?.get(rootId.toLowerCase())?.trim() || sessionTitle(root);

@@ -1,15 +1,18 @@
 "use client";
+import { SOURCE_COLORS } from "@/lib/context-track";
 
+import { LcdTag } from "@/components/lcd-tag";
 import { useEffect, useMemo, useState } from "react";
 
 import { CumulativeChart, TurnCompositionChart, TurnHeatTable } from "@/components/analysis-charts";
-import { InfoIcon } from "@/components/icons";
+import { InfoIcon, SearchIcon } from "@/components/icons";
 import { ModelUsageDonuts } from "@/components/model-usage-donuts";
 import { SubscriptionUsageCard } from "@/components/subscription-usage";
 import { LcdNumber } from "@/components/lcd-number";
 import { formatCreditUsd } from "@/lib/credit-display";
 import { SessionNavigator, type NavigationView } from "@/components/session-navigator";
 import { TokenContextRing } from "@/components/token-context-ring";
+import { TokenContextTracks } from "@/components/token-context-tracks";
 import { TurnDetailDrawer } from "@/components/turn-detail-drawer";
 import { usePolling } from "@/hooks/use-polling";
 import { filterNavigationSessions, retainAvailableModelSelection, summarySessionIds } from "@/lib/session-navigation";
@@ -74,9 +77,9 @@ function PrivacyInfo() {
 
 function SummaryBrief({ usage, subscription, turns, tools, compactions, unit }: { usage: Usage; subscription: SubscriptionUsage; turns: number; tools: number; compactions: number; unit: TokenUnit }) {
   return <section className="session-meters" aria-label="实时摘要">
-    <div className="meter-primary">
-      <div className="meter"><div className="meter-label">订阅消耗 <span className="estimate-tag">估算</span></div><LcdNumber value={formatCreditUsd(subscription.estimatedCredits)} /><small>当前范围 · 美元等值 · 全价估算{subscription.unpricedTokens > 0 ? " · 含未定价用量" : ""}</small></div>
-      <div className="meter"><div className="meter-label">总 Token</div><LcdNumber value={formatTokens(usage.total, unit)} /><small>当前会话与日期范围</small></div>
+    <div className="summary-lcd-board"><div className="meter-primary">
+      <div className="meter"><div className="meter-label">订阅消耗 <LcdTag className="estimate-tag">估算</LcdTag><LcdTag className="estimate-tag" active={subscription.unpricedTokens > 0}>含未定价</LcdTag></div><LcdNumber value={formatCreditUsd(subscription.estimatedCredits)} /></div>
+      <div className="meter"><div className="meter-label">总 Token</div><LcdNumber value={formatTokens(usage.total, unit)} /></div>
     </div>
     <div className="meter-secondary">
       <div><span>轮次</span><LcdNumber value={formatCount(turns)} small /></div>
@@ -84,7 +87,7 @@ function SummaryBrief({ usage, subscription, turns, tools, compactions, unit }: 
       <div><span>工具调用</span><LcdNumber value={formatCount(tools)} small /></div>
       <div><span>压缩次数</span><LcdNumber value={formatCount(compactions)} small /></div>
     </div>
-    <details className="meter-token-details"><summary>输入与输出明细</summary><div><span>输入 <b>{formatTokens(usage.input, unit)}</b></span><span>缓存输入 <b>{formatTokens(usage.cached, unit)}</b></span><span>输出 <b>{formatTokens(usage.output, unit)}</b></span></div></details>
+    </div><details className="meter-token-details"><summary>输入与输出明细</summary><div><span>输入 <b>{formatTokens(usage.input, unit)}</b></span><span>缓存输入 <b>{formatTokens(usage.cached, unit)}</b></span><span>输出 <b>{formatTokens(usage.output, unit)}</b></span></div></details>
   </section>;
 }
 
@@ -134,6 +137,7 @@ export function Dashboard() {
   const [unit, setUnit] = useState<TokenUnit>("M");
   const [scale, setScale] = useState<"linear" | "log">("linear");
   const [tab, setTab] = useState<AnalysisTab>("composition");
+  const [instrumentView, setInstrumentView] = useState<"tracks" | "ring">("tracks");
   const [drawerTurn, setDrawerTurn] = useState<AggregatedTurnReport | null>(null);
   const [drawerTool, setDrawerTool] = useState<ToolCall | null>(null);
   const [navOpen, setNavOpen] = useState(false);
@@ -215,7 +219,6 @@ export function Dashboard() {
   const filteredNavigationSessions = useMemo(() => filterNavigationSessions(report?.navigationSessions ?? [], selectedModels, sessionQuery), [report?.navigationSessions, selectedModels, sessionQuery]);
   const visibleNavigationIds = useMemo(() => new Set(filteredNavigationSessions.map((session) => session.metadata.threadId)), [filteredNavigationSessions]);
   const summarySelectionIds = useMemo(() => summarySessionIds(navigationView, filteredNavigationSessions, recentSelectedSessionIds), [filteredNavigationSessions, navigationView, recentSelectedSessionIds]);
-  const summarySelectionIdSet = useMemo(() => new Set(summarySelectionIds), [summarySelectionIds]);
   const filteredSessions = useMemo(() => sessions.filter((session) => visibleNavigationIds.has(session.metadata.threadId)), [sessions, visibleNavigationIds]);
   useEffect(() => {
     if (!report || !selectionInitialized) return;
@@ -232,12 +235,14 @@ export function Dashboard() {
       return statusMatches && modelMatches && (!query || text.includes(query));
     });
   }, [selected, selectedModels, statuses, turnQuery]);
+  useEffect(() => {
+    if (drawerTurn && !visibleTurns.some(turn => turn.turnId === drawerTurn.turnId && turn.sourceRolloutId === drawerTurn.sourceRolloutId)) { setDrawerTurn(null); setDrawerTool(null); }
+  }, [visibleTurns, drawerTurn]);
   const toolFilterCategories = useMemo(() => {
     const discovered = Object.keys(selected?.summary.toolCategories ?? {}).filter((category) => !DEFAULT_VISIBLE_TOOL_CATEGORIES.includes(category as (typeof DEFAULT_VISIBLE_TOOL_CATEGORIES)[number]));
     discovered.sort((left, right) => toolCategoryLabel(left).localeCompare(toolCategoryLabel(right)));
     return [...DEFAULT_VISIBLE_TOOL_CATEGORIES, ...discovered];
   }, [selected?.summary.toolCategories]);
-  const selectedProjectCount = useMemo(() => new Set(report?.navigationSessions.filter((session) => summarySelectionIdSet.has(session.metadata.threadId)).map((session) => session.metadata.projectId) ?? []).size, [report?.navigationSessions, summarySelectionIdSet]);
   const overviewTitle = navigationView === "project" ? "当前筛选总览" : "所选会话总览";
   const overviewCount = navigationView === "project"
     ? `${formatCount(summarySelectionIds.length)} 个会话 · ${formatCount(report?.summary.turnCount ?? 0)} 轮`
@@ -261,37 +266,41 @@ export function Dashboard() {
       <aside className={`report-nav${navOpen ? " open" : ""}`}>
         <div className="nav-rail"><button type="button" onClick={() => setNavCollapsed(false)} aria-label="展开会话导航"><span className="brand-mark">CT</span><span aria-hidden="true">›</span></button></div>
         <div className="nav-expanded">
-          <header className="nav-head"><div className="brand"><div className="brand-mark">CT</div><div><strong>Codex Token Desk</strong><span>本机实时监控</span></div></div><button className="icon-button nav-collapse" type="button" onClick={() => setNavCollapsed(true)} aria-label="收起会话导航">‹</button><button className="icon-button nav-mobile-close" type="button" onClick={() => setNavOpen(false)} aria-label="关闭会话导航">×</button></header>
+          <header className="nav-head"><div className="brand"><div className="brand-mark">CT</div><div><strong>Codex Token Desk</strong></div></div><button className="icon-button nav-collapse" type="button" onClick={() => setNavCollapsed(true)} aria-label="收起会话导航">‹</button><button className="icon-button nav-mobile-close" type="button" onClick={() => setNavOpen(false)} aria-label="关闭会话导航">×</button></header>
           <button className={`session-button session-total-button${view === "total" ? " active" : ""}`} type="button" onClick={() => { setView("total"); setNavOpen(false); }}><span className="session-copy"><strong>{overviewTitle}</strong><small>{overviewCount}</small></span><span className="session-total">{formatTokens(report.summary.finalUsage.total, unit)}</span></button>
-          <section className="date-filter"><div className="date-filter-head"><span>DATE RANGE</span><small>{report.metadata.selection.timeZone}</small></div><div className="date-presets">{(["today", "7d", "30d", "all", "custom"] as Range[]).map((item) => <button className={range === item ? "active" : ""} type="button" key={item} onClick={() => setRange(item)}>{item === "today" ? "今天" : item === "7d" ? "7 天" : item === "30d" ? "30 天" : item === "all" ? "全部" : "自定义"}</button>)}</div>{range === "custom" && <div className="date-fields"><label>开始<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label>结束<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label></div>}<p>{report.metadata.selection.from ? report.metadata.selection.from === report.metadata.selection.to ? report.metadata.selection.from : `${report.metadata.selection.from} → ${report.metadata.selection.to}` : "全部时间"}</p></section>
-          <section className="model-filter"><div className="scope-heading"><span>MODELS</span>{selectedModels.size > 0 && <button type="button" onClick={() => setSelectedModels(new Set())}>重置</button>}</div><div className="model-filter-list">{report.navigationModelUsage.map((bucket) => <button key={bucket.model} type="button" className="model-filter-toggle" aria-pressed={!selectedModels.size || selectedModels.has(bucket.model)} style={{ "--model-color": modelColor(bucket.model) } as React.CSSProperties} onClick={() => toggleModel(bucket.model)}><i />{bucket.model}<small>{formatTokens(bucket.rawTokens, unit)}</small></button>)}</div></section>
+          <section className="date-filter"><div className="date-filter-head"><span>时间范围</span><small>{report.metadata.selection.timeZone}</small></div><div className="date-presets">{(["today", "7d", "30d", "all", "custom"] as Range[]).map((item) => <button className={range === item ? "active" : ""} type="button" key={item} onClick={() => setRange(item)}>{item === "today" ? "今天" : item === "7d" ? "7 天" : item === "30d" ? "30 天" : item === "all" ? "全部" : "自定义"}</button>)}</div>{range === "custom" && <div className="date-fields"><label>开始<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label>结束<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label></div>}<p>{report.metadata.selection.from ? report.metadata.selection.from === report.metadata.selection.to ? report.metadata.selection.from : `${report.metadata.selection.from} → ${report.metadata.selection.to}` : "全部时间"}</p></section>
+          <section className="model-filter"><div className="scope-heading"><span>模型</span>{selectedModels.size > 0 && <button type="button" onClick={() => setSelectedModels(new Set())}>重置</button>}</div><div className="model-filter-list">{report.navigationModelUsage.map((bucket) => <button key={bucket.model} type="button" className="model-filter-toggle" aria-pressed={!selectedModels.size || selectedModels.has(bucket.model)} style={{ "--model-color": modelColor(bucket.model) } as React.CSSProperties} onClick={() => toggleModel(bucket.model)}><i />{bucket.model}<small>{formatTokens(bucket.rawTokens, unit)}</small></button>)}</div></section>
           <SessionNavigator projects={report.metadata.projects} sessions={report.navigationSessions} recentSelectedIds={recentSelectedSessionIds} openedId={selectedId} view={navigationView} query={sessionQuery} unit={unit} selectedModels={selectedModels} expandedProjectIds={expandedProjectIds} onViewChange={setNavigationView} onQueryChange={setSessionQuery} onRecentSelectionChange={setRecentSelectedSessionIds} onExpandedProjectIdsChange={setExpandedProjectIds} onOpenSession={openSession} />
         </div>
       </aside>
       <section className="report-main">
-        <header className="topbar"><div className="content-heading"><button className="mobile-nav-trigger" type="button" onClick={() => setNavOpen(true)} aria-label="打开导航">☰</button><div><strong>{view === "total" ? overviewTitle : selected?.metadata.primaryModel || "会话分析"}</strong><span>{report.metadata.scope.label}</span></div></div><div className="topbar-actions"><TokenUnitControl unit={unit} onChange={setUnit} /><PrivacyInfo /><div className="connection"><span className={`live-dot ${report.metadata.live.status}`} /><span>{refreshing ? "刷新中…" : error ? "连接异常" : !summarySelectionIds.length ? navigationView === "project" ? "无匹配会话" : "尚未选择" : report.metadata.live.status === "empty" ? "当前范围无活动" : "实时接通"}</span><button className="icon-button small" onClick={refresh} type="button" aria-label="立即刷新">↻</button></div></div></header>
+        <header className="topbar"><div className="content-heading"><button className="mobile-nav-trigger" type="button" onClick={() => setNavOpen(true)} aria-label="打开导航">☰</button><div><h1 title={selected?.metadata.title}>{view === "total" ? overviewTitle : selected?.metadata.title || "会话分析"}</h1><span>{view === "total" ? report.metadata.scope.label : `${selected?.metadata.projectLabel ?? ""} · ${selected?.metadata.primaryModel ?? ""}`}</span></div></div><div className="topbar-actions">{view === "session" && <button className="back-total" type="button" onClick={() => setView("total")}>总览</button>}<TokenUnitControl unit={unit} onChange={setUnit} /><PrivacyInfo /><div className="connection"><span className={`live-dot ${report.metadata.live.status}`} /><span>{refreshing ? "刷新中…" : error ? "连接异常" : !summarySelectionIds.length ? navigationView === "project" ? "无匹配会话" : "尚未选择" : report.metadata.live.status === "empty" ? "当前范围无活动" : "实时接通"}</span><button className="icon-button small" onClick={refresh} type="button" aria-label="立即刷新">↻</button></div></div></header>
         {error && <div className="alert error"><strong>实时服务异常：</strong> {error}</div>}
         <div className="report-content">
           {view === "total" ? <>
-            <section className="hero"><div className="hero-copy"><p className="kicker">MULTI-SESSION OVERVIEW</p><h1>{report.metadata.scope.label}</h1><p className="path">{selectedProjectCount} 个项目 · {summarySelectionIds.length} 个会话 · {report.metadata.live.selectedRolloutCount} 个 rollout · {report.metadata.selection.timeZone}</p></div><SummaryBrief subscription={report.summary.subscriptionUsage} usage={report.summary.finalUsage} turns={report.summary.turnCount} tools={report.summary.toolCallCount} compactions={sessions.reduce((sum, session) => sum + session.summary.contextCompactions, 0)} unit={unit} /></section>
+            <section className="hero"><SummaryBrief subscription={report.summary.subscriptionUsage} usage={report.summary.finalUsage} turns={report.summary.turnCount} tools={report.summary.toolCallCount} compactions={sessions.reduce((sum, session) => sum + session.summary.contextCompactions, 0)} unit={unit} /></section>
             {!summarySelectionIds.length ? <div className="empty-state scoped-empty"><h2>{navigationView === "project" ? "当前筛选没有会话" : "尚未选择会话"}</h2><p>{navigationView === "project" ? "调整日期、模型或搜索条件后再查看。" : "在最近列表中勾选一个或多个会话。"}</p></div> : report.summary.sessionCount === 0 ? <div className="empty-state scoped-empty"><h2>当前范围无活动</h2><p>会话仍保留在最近列表；可切换日期范围查看历史统计。</p></div> : <><SubscriptionUsageCard usage={report.summary.subscriptionUsage} unit={unit} detailsOnly /><ModelUsageDonuts models={report.summary.modelUsage} sessions={filteredSessions} rateCard={report.metadata.rateCard} unit={unit} selectedModels={selectedModels} onToggleModel={toggleModel} onSelectSession={openSession} planExcluded={report.summary.planExcludedUsage} /><DailyUsage daily={report.summary.dailyUsage} unit={unit} /></>}
           </> : selected ? <>
             <section className="session-overview" style={{ "--model-color": modelColor(selected.metadata.primaryModel) } as React.CSSProperties}>
-              <header className="session-overview-head"><div className="session-title-row"><button className="back-total" type="button" onClick={() => setView("total")}>← 返回总览</button><div><h1 title={selected.metadata.title}>{selected.metadata.title}</h1><p>{selected.metadata.projectLabel}<span aria-hidden="true">·</span>{selected.metadata.primaryModel}</p></div></div></header>
-              <SummaryBrief subscription={selected.summary.subscriptionUsage} usage={selected.summary.finalUsage} turns={selected.summary.turnCount} tools={selected.summary.toolCallCount} compactions={selected.summary.contextCompactions} unit={unit} /><div className="session-overview-grid"><div className="session-ring-panel"><TokenContextRing turns={visibleTurns} selectedId={drawerTurn?.turnId ?? null} selectedToolCategories={toolCategories} unit={unit} onSelectTurn={openTurn} onSelectTool={openTool} /></div></div>
+              <SummaryBrief subscription={selected.summary.subscriptionUsage} usage={selected.summary.finalUsage} turns={selected.summary.turnCount} tools={selected.summary.toolCallCount} compactions={selected.summary.contextCompactions} unit={unit} />
+              <section className="analysis-instrument" aria-label="会话仪表">
+                <div className="instrument-head"><div className="instrument-view-switch" role="group" aria-label="仪表视图"><button type="button" aria-pressed={instrumentView === "tracks"} onClick={() => setInstrumentView("tracks")}>轨道</button><button type="button" aria-pressed={instrumentView === "ring"} onClick={() => setInstrumentView("ring")}>双环</button></div><span className="instrument-caption">{visibleTurns.length} 轮</span></div>
+                {instrumentView === "tracks" ? <TokenContextTracks key={`${selected.metadata.threadId}:${range}:${from}:${to}:${turnQuery}:${[...statuses].join()}:${[...selectedModels].join()}`} turns={visibleTurns} contextTurns={selected.turns} selectedTurnId={drawerTurn ? `${drawerTurn.sourceRolloutId}:${drawerTurn.turnId}` : undefined} selectedToolCategories={toolCategories} unit={unit} onSelectTurn={openTurn} onSelectTool={openTool} /> : <div className="session-ring-panel"><TokenContextRing turns={visibleTurns} selectedId={drawerTurn?.turnId ?? null} selectedToolCategories={toolCategories} unit={unit} onSelectTurn={openTurn} onSelectTool={openTool} /></div>}
+                <section className="analysis-controls">
+              <div className="filter-row"><label className="search-field"><SearchIcon /><input type="search" aria-label="搜索轮次" value={turnQuery} onChange={(event) => setTurnQuery(event.target.value)} placeholder="搜索 ID、来源、模型或消息全文" /></label><fieldset className="filter-group"><legend>状态</legend>{(["complete", "aborted", "incomplete"] as const).map((status) => <label className="filter-option" key={status}><input type="checkbox" checked={statuses.has(status)} onChange={() => toggleStatus(status)} />{status === "complete" ? "完成" : status === "aborted" ? "已中止" : "未完成"}</label>)}</fieldset>{tab === "composition" && <fieldset className="filter-group"><legend>刻度</legend>{(["linear", "log"] as const).map((item) => <label className="filter-option" key={item}><input type="radio" checked={scale === item} onChange={() => setScale(item)} />{item === "linear" ? "线性" : "对数"}</label>)}</fieldset>}<span className="visible-count">显示 {visibleTurns.length} 轮</span><button className="reset-filters" type="button" onClick={resetAnalysisFilters}>清除筛选</button></div>
+              <fieldset className="tool-filter-list"><legend>工具</legend>{toolFilterCategories.map((category) => <label className="filter-option" key={category} style={{ "--tool-color": toolCategoryColor(category) } as React.CSSProperties}><input type="checkbox" checked={toolCategories.has(category)} onChange={() => toggleTool(category)} /><i />{toolCategoryLabel(category)} <small>{selected.summary.toolCategories[category] ?? 0}</small></label>)}</fieldset>
+            </section>
+              </section>
             </section>
             <SubscriptionUsageCard usage={selected.summary.subscriptionUsage} unit={unit} detailsOnly />
             {selected.summary.turnCount === 0 && <div className="range-empty-note">当前日期范围内没有活动；该会话仍可查看和导航。</div>}
-            <section className="analysis-controls">
-              <div className="filter-row"><label className="search-field"><span>⌕</span><input type="search" value={turnQuery} onChange={(event) => setTurnQuery(event.target.value)} placeholder="搜索 ID、来源、模型或消息全文" /></label><fieldset className="filter-group"><legend>状态</legend>{(["complete", "aborted", "incomplete"] as const).map((status) => <label className="filter-option" key={status}><input type="checkbox" checked={statuses.has(status)} onChange={() => toggleStatus(status)} />{status}</label>)}</fieldset>{tab === "composition" && <fieldset className="filter-group"><legend>刻度</legend>{(["linear", "log"] as const).map((item) => <label className="filter-option" key={item}><input type="radio" checked={scale === item} onChange={() => setScale(item)} />{item === "linear" ? "线性" : "对数"}</label>)}</fieldset>}<span className="visible-count">显示 {visibleTurns.length} 轮</span><button className="reset-filters" type="button" onClick={resetAnalysisFilters}>清除筛选</button></div>
-              <fieldset className="tool-filter-list"><legend>工具</legend>{toolFilterCategories.map((category) => <label className="filter-option" key={category} style={{ "--tool-color": toolCategoryColor(category) } as React.CSSProperties}><input type="checkbox" checked={toolCategories.has(category)} onChange={() => toggleTool(category)} /><i />{toolCategoryLabel(category)} <small>{selected.summary.toolCategories[category] ?? 0}</small></label>)}</fieldset>
-            </section>
+
             <section className="analysis-shell"><div className="analysis-tabbar"><nav className="analysis-tabs" aria-label="分析视图">{(["composition", "cumulative", "detail", "session"] as AnalysisTab[]).map((item) => <button className={`analysis-tab${tab === item ? " active" : ""}`} type="button" key={item} aria-pressed={tab === item} onClick={() => setTab(item)}>{item === "composition" ? "单轮构成" : item === "cumulative" ? "累计趋势" : item === "detail" ? "逐轮明细" : "会话详情"}</button>)}</nav></div><div className="tab-panel">{tab === "composition" ? <TurnCompositionChart turns={visibleTurns} scale={scale} unit={unit} onSelect={openTurn} /> : tab === "cumulative" ? <CumulativeChart turns={visibleTurns} unit={unit} onSelect={openTurn} /> : tab === "detail" ? <TurnHeatTable turns={visibleTurns} unit={unit} onSelect={openTurn} /> : <SessionDetails session={selected} warnings={report.warnings} />}</div></section>
           </> : <div className="empty-state"><h2>会话不可用</h2><p>它可能已被移动或删除，请从左侧重新打开。</p></div>}
           {view === "total" && <WarningsPanel warnings={report.warnings} integrityErrors={report.summary.integrityErrorCount} warningCount={report.summary.warningCount} />}
         </div>
       </section>
     </div>
-    <TurnDetailDrawer turn={drawerTurn} tool={drawerTool} unit={unit} onClose={closeDrawer} />
+    <TurnDetailDrawer turn={drawerTurn} tool={drawerTool} turns={visibleTurns} unit={unit} sourceColor={SOURCE_COLORS[Math.max(0, [...new Set(visibleTurns.map(turn => turn.sourceRolloutId))].indexOf(drawerTurn?.sourceRolloutId ?? "")) % SOURCE_COLORS.length]} onSelectTurn={openTurn} onClose={closeDrawer} />
   </main>;
 }

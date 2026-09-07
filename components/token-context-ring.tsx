@@ -7,7 +7,7 @@ import { filterToolsByCategory, toolCategoryColor, toolCategoryLabel } from "@/l
 import { arcBandPath, arcLinePath, contextBands, radialEntries, radialPoint } from "@/lib/visualization-geometry";
 import type { AggregatedTurnReport, ToolCall } from "@/lib/types";
 
-const SOURCE_PALETTE = ["#3b8b78", "#4f78a8", "#bd7556", "#8c78bd", "#6d8c45", "#a56c3f"];
+const SOURCE_PALETTE = ["#99bd85", "#83b3a0", "#c4b184", "#a9a9c1", "#b3c58b", "#bcac78"];
 
 function hashColor(value: string): string {
   let hash = 0;
@@ -16,11 +16,11 @@ function hashColor(value: string): string {
 }
 
 function contextColor(rate: number | null): string {
-  if (rate === null) return "#9d9385";
-  if (rate >= 90) return "#c34f4f";
-  if (rate >= 75) return "#c47b2f";
-  if (rate >= 50) return "#b29a36";
-  return "#3b8b78";
+  if (rate === null) return "#94a08a";
+  if (rate >= 90) return "#ed9a78";
+  if (rate >= 75) return "#e2bc68";
+  if (rate >= 50) return "#d3c777";
+  return "#b9db9c";
 }
 
 type Tooltip = { x: number; y: number; turn: AggregatedTurnReport; tool: ToolCall | null } | null;
@@ -59,7 +59,7 @@ export function TokenContextRing({ turns, selectedId, selectedToolCategories, un
         <pattern id="unknown-context" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><line x1="0" y1="0" x2="0" y2="8" stroke="#8f8576" strokeWidth="2" opacity=".4" /></pattern>
         <marker id="compaction-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,4 L0,8 Z" fill="#b77a26" /></marker>
       </defs>
-      <path d={arcBandPath(cx, cy, outerInner, outerOuter, 0, 1)} fill="#e9e2d7" />
+      <path d={arcBandPath(cx, cy, outerInner, outerOuter, 0, 1)} fill="#283f2e" />
       <path d={arcBandPath(cx, cy, innerBase + (innerMax - innerBase) * .75, innerMax, 0, 1)} className="context-danger-zone" />
       {[25, 50, 75, 100].map((rate) => {
         const radius = innerBase + (innerMax - innerBase) * rate / 100;

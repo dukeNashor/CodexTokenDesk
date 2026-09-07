@@ -94,3 +94,26 @@ describe("TypeScript rollout parser", () => {
     }
   });
 });
+
+it("retains response-item user messages in their active turn", () => {
+  const file = path.join(process.cwd(), "tests", "fixtures", "response-user-regression.jsonl");
+  const event = (payload: object) => ({ type: "event_msg", timestamp: "2026-01-01T00:00:00Z", payload });
+  fs.writeFileSync(file, [event({ type: "task_started", turn_id: "a" }), { type: "response_item", timestamp: "2026-01-01T00:00:01Z", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Show my message" }] } }, event({ type: "task_complete", turn_id: "a" })].map(row => JSON.stringify(row)).join("\n"));
+  try { expect(parseRollout(file).turns[0].messages.map(message => message.text)).toEqual(["Show my message"]); }
+  finally { fs.rmSync(file, { force: true }); }
+});
+
+it.each([false, true])("pairs dual user-message formats without losing repeats or turn attribution (reverse=%s)", reverse => {
+  const file = path.join(process.cwd(), "tests", "fixtures", "dual-user-regression.jsonl");
+  const event = (payload: object) => ({ type: "event_msg", timestamp: "2026-01-01T00:00:00Z", payload });
+  const response = { type: "response_item", timestamp: "2026-01-01T00:00:01Z", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "ok" }] } };
+  const legacy = event({ type: "user_message", message: "ok", client_id: "client" });
+  const pair = reverse ? [legacy, response] : [response, legacy];
+  fs.writeFileSync(file, [event({ type: "task_started", turn_id: "a" }), ...pair, ...pair, event({ type: "task_complete", turn_id: "a" }), event({ type: "task_started", turn_id: "b" }), response, event({ type: "task_complete", turn_id: "b" })].map(row => JSON.stringify(row)).join("\n"));
+  try {
+    const report = parseRollout(file);
+    expect(report.turns.map(turn => turn.messages.map(message => message.text))).toEqual([["ok", "ok"], ["ok"]]);
+    expect(report.turns[0].messages.map(message => message.steering)).toEqual([false, true]);
+    expect(report.turns[0].messages[0].clientId).toBe("client");
+  } finally { fs.rmSync(file, { force: true }); }
+});

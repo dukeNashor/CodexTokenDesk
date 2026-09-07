@@ -252,6 +252,8 @@ export type ProjectIdentity = {
 };
 
 export type AggregatedTurnReport = TurnReport & {
+  /** Previous same-source occupancy before date filtering; zero only for the first round. */
+  contextBaselineRate?: number | null;
   sourceTurnIndex: number;
   sourceRolloutId: string;
   sourceKind: RolloutMetadata["sourceKind"];

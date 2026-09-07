@@ -1,5 +1,6 @@
 "use client";
 
+import { LcdTag } from "@/components/lcd-tag";
 import { useMemo } from "react";
 
 import { ChevronIcon, ConversationIcon, ExplorerIcon, FolderIcon, RecentIcon, SearchIcon } from "@/components/icons";
@@ -35,7 +36,7 @@ function formatDate(value: string | null): string {
 }
 
 function SessionWatermark({ model }: { model: string }) {
-  return <span className="session-watermark" aria-hidden="true">{modelWatermarkLabel(model)}</span>;
+  return <LcdTag className="session-watermark" decorative segmented>{modelWatermarkLabel(model)}</LcdTag>;
 }
 
 export function SessionNavigator(props: Props) {
@@ -75,9 +76,9 @@ export function SessionNavigator(props: Props) {
     >
       <ConversationIcon className="navigator-icon" />
       <SessionWatermark model={model} />
-      {isPlanExcluded && <span className="session-plan-status">计划外</span>}
+      {isPlanExcluded && <LcdTag className="session-plan-status">计划外</LcdTag>}
       <span className="explorer-session-copy"><strong>{session.metadata.title}</strong><small>{formatDate(session.metadata.lastActivityAt)}</small><em>{formatTokens(session.range.usage.total, unit)} Token</em></span>
-      <span className="session-effort">{navigationEffortLabel(session.metadata.efforts)}</span>
+      <LcdTag className="session-effort">{navigationEffortLabel(session.metadata.efforts)}</LcdTag>
     </div>;
   };
 
@@ -94,10 +95,10 @@ export function SessionNavigator(props: Props) {
         const projectSessions = sessions.filter((session) => session.metadata.projectId === project.id);
         const lastActivity = projectSessions.map((session) => session.metadata.lastActivityAt).filter(Boolean).sort().at(-1) ?? null;
         const expanded = autoExpanded.has(project.id);
-        return <section className="project-explorer-group" key={project.id}>
+        return <section className={`project-explorer-group${expanded ? " expanded" : ""}`} key={project.id}>
           <div className="project-tile" data-navigator-item>
-            <button className={`project-chevron${expanded ? " expanded" : ""}`} type="button" onClick={() => toggleExpanded(project.id)} aria-label={`${expanded ? "折叠" : "展开"}${project.label}`}><ChevronIcon /></button>
-            <button className="project-tile-main" type="button" onClick={() => toggleExpanded(project.id)} aria-label={`${expanded ? "折叠" : "展开"}${project.label} 项目`}>
+            <button className={`project-chevron${expanded ? " expanded" : ""}`} type="button" onClick={() => toggleExpanded(project.id)} aria-expanded={expanded} aria-label={`${expanded ? "折叠" : "展开"}${project.label}`}><ChevronIcon /></button>
+            <button className="project-tile-main" type="button" onClick={() => toggleExpanded(project.id)} aria-expanded={expanded} aria-label={`${expanded ? "折叠" : "展开"}${project.label} 项目`}>
               <FolderIcon className="project-folder" />
               <span className="project-tile-copy"><strong>{project.label}</strong><small>{formatCount(visibleCount)} / {formatCount(ids.length)} 个会话 · {formatCount(project.sessionCount)} rollout · {formatCount(project.worktrees.length)} worktree</small><em>最后活动 {formatDate(lastActivity)}</em></span>
             </button>
@@ -114,9 +115,9 @@ export function SessionNavigator(props: Props) {
         return <div className={`recent-session-row${openedId === id ? " opened" : ""}${isPlanExcluded ? " plan-excluded" : ""}`} key={id} data-navigator-item style={{ "--model-color": navigationModelColor(model) } as React.CSSProperties} onClick={() => onOpenSession(id)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenSession(id); } }} aria-label={`${session.metadata.title}，${session.metadata.projectLabel}，${model}，最后活跃 ${formatDate(session.metadata.lastActivityAt)}`}>
           <ConversationIcon className="navigator-icon" />
           <SessionWatermark model={model} />
-          {isPlanExcluded && <span className="session-plan-status">计划外</span>}
+          {isPlanExcluded && <LcdTag className="session-plan-status">计划外</LcdTag>}
           <span className="recent-session-copy"><strong>{session.metadata.title}</strong><small>{session.metadata.projectLabel} · {formatDate(session.metadata.lastActivityAt)}</small><em>{formatTokens(session.range.usage.total, unit)} Token</em></span>
-          <span className="session-effort">{navigationEffortLabel(session.metadata.efforts)}</span>
+          <LcdTag className="session-effort">{navigationEffortLabel(session.metadata.efforts)}</LcdTag>
           <input type="checkbox" checked={recentSelectedIds.has(id)} onClick={(event) => event.stopPropagation()} onChange={() => toggleRecent(id)} aria-label={`选择 ${session.metadata.title}`} />
         </div>;
       })}

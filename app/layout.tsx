@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import "./globals.css";
+import "./instrument.css";
 
 export const metadata: Metadata = {
   title: "Codex Token Desk",

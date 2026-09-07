@@ -450,6 +450,28 @@ export function parseRollout(filePath: string, options: { tolerateLive?: boolean
     }
   };
 
+  const userMessageFormats = new WeakMap<TurnMessage, Set<string>>();
+  const recordUserMessage = (message: TurnMessage, format: string, lineNumber: number) => {
+    const messages = current?.messages ?? orphanMessages;
+    // Pair equivalent representations once; repeated messages in one format are real messages.
+    const duplicate = messages.find(item => item.text === message.text && item.imageCount === message.imageCount && item.audioCount === message.audioCount && !userMessageFormats.get(item)?.has(format));
+    if (duplicate) {
+      userMessageFormats.get(duplicate)!.add(format);
+      if (message.clientId) duplicate.clientId = message.clientId;
+      return;
+    }
+    userMessageFormats.set(message, new Set([format]));
+    if (current) {
+      current.messageEvents += 1;
+      message.steering = current.messageEvents > 1;
+      current.messages.push(message);
+      noteActivity(current, message.timestamp);
+    } else {
+      orphanMessages.push(message);
+      warnings.push(warning("warning", "orphan_user_message", "活动轮次之外出现了一条用户消息。", lineNumber));
+    }
+  };
+
   const recordTool = (recordType: string, payload: JsonRecord, timestamp: string) => {
     const event = extractToolEvent(recordType, payload);
     if (!event || !current) return;
@@ -543,6 +565,14 @@ export function parseRollout(filePath: string, options: { tolerateLive?: boolean
     }
 
     if (recordType === "response_item") {
+      if (eventType === "message" && text(payload.role) === "user") {
+        const content = Array.isArray(payload.content) ? payload.content.map(record) : [];
+        recordUserMessage({
+          timestamp, text: responseText(payload) || "", clientId: firstText(payload.client_id) || null,
+          imageCount: content.filter(part => ["input_image", "image"].includes(text(part.type))).length,
+          audioCount: content.filter(part => ["input_audio", "audio"].includes(text(part.type))).length,
+        }, "response_item", lineNumber);
+      }
       if (current && text(payload.role) === "assistant") {
         const output = responseText(payload);
         if (output && current.outputs.at(-1)?.text !== output) current.outputs.push({ timestamp, text: output, phase: firstText(payload.phase) || null });
@@ -603,15 +633,7 @@ export function parseRollout(filePath: string, options: { tolerateLive?: boolean
         imageCount: (Array.isArray(images) ? images.length : 0) + (Array.isArray(localImages) ? localImages.length : 0),
         audioCount: (Array.isArray(audio) ? audio.length : 0) + (Array.isArray(localAudio) ? localAudio.length : 0),
       };
-      if (current) {
-        current.messageEvents += 1;
-        message.steering = current.messageEvents > 1;
-        current.messages.push(message);
-        noteActivity(current, timestamp);
-      } else {
-        orphanMessages.push(message);
-        warnings.push(warning("warning", "orphan_user_message", "活动轮次之外出现了一条用户消息。", lineNumber));
-      }
+      recordUserMessage(message, "event_msg", lineNumber);
       continue;
     }
     if (eventType === "agent_message") {
